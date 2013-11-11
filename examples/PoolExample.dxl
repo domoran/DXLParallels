@@ -1,0 +1,43 @@
+/*
+    Copyright 2013 by Mathias Mamsch
+    This file is part of the Parallels Library 
+
+    The Parallels Library  is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The Parallels Library  is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include <lib/Parallels/Worker.inc>
+#include <lib/Parallels/Pool.inc>
+#include <examples/HelloWorker.inc>
+
+Pool p = createPool 3 // three parallel workers 
+
+Worker w1 = createHelloWorker("One!"); 
+Worker w2 = createHelloWorker("Two!"); 
+Worker w3 = createHelloWorker("Three!"); 
+Worker w4 = createHelloWorker("Four!"); 
+
+enqueue(p, w1); 
+enqueue(p, w2); 
+enqueue(p, w3); 
+enqueue(p, w4); 
+
+if (getStarted w1) error "No job should be started yet!"
+processQueue(p); // first three jobs get started ...
+if (!getStarted w1 || !getStarted w2 || !getStarted w3 || getStarted w4) error "Pool should have started three processes by now!"
+processQueue(p); // results of irst three jobs get removed, fourth job is started ...
+if (!getStarted w4) error "Now the queue should have started job 4!"
+if (!null getQueueResult(p, 3)) error "Result for job 4 should not be available yet!"
+processQueue(p); // fourth job is removed and result stored...
+
+int i; for (i = 0; i < 4; i++) print getQueueResult(p, i) "\n"; 

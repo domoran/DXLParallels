@@ -1,0 +1,469 @@
+
+Copyright 2010 by Mathias Mamsch
+This file is part of the Parallels Library 
+
+The Parallels Library  is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+The Parallels Library  is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
+
+
+17:30 Start of Tutorial
+-----------------------
+
+Okay, let me make a hopefully quick tutorial about to go about how to go about problems like this. 
+
+What we are going to do in this tutorial is look at the procedure of complex DXL development (of course this can be done in any language) at the example of a parallelization framework, that will allow us to run DXL scripts in parallel. For this tutorial we will only make a minimal example, that is we will not implement a couple of features like progress reporting and convenience functionality that you would expect from a generic parallelization framework. 
+
+Okay, generally ever complex development should start by some requirements/user stories and a design. Note that since we are doing a generic library our "users" are the developers, that want to develop parallel DXL code easily. So lets try to formulate, what a developer would want to do. 
+
+17:45 User Story
+----------------
+
+To be able to use the advantages of modern multi-core machines we want to be able to parallely execute DXL code, since most DXL code is CPU bound (i.e. it's maximum runtime is dependent on the CPU speed) and each DOORS can only facilitate one DXL thread. 
+
+For this I want to be able to define a function, that shall be executed on a large array of parameters. The parallelization framework shall run this function on each set of parameters inside the large array. I want to be able to continue the execution of the DXL script, after all results have been calculated. 
+
+It must be possible to quickly develop parallelized code, i.e. I want to be able to either quickly convert or wrap an existing function, so it can be executed in parallel.
+
+17:55 Technical Design 
+----------------------
+
+Okay, so lets come up with a Design to solve the requirements that are hidden inside the user story. I like to think about the general technical problems first and how to solve them before doing the actual software design. This way we know what technical restrictions we need to take into account, before designing our software. This is kind of an combined Bottom-Up (detailed technical problems first) Top-Down (Software Design will be top down). This works best for me, when solving complex programming tasks. However it is of course not mandatory to go this way. Anyway - lets think about the technical problems will we need to solve: 
+
+1. Starting parallel DXL code, passing parameters to it, receiving results. 
+
+So from the technical perspective it is clear, that we need to start DOORS batch jobs to be able to execute code in parallel. So the generic way of starting a DXL script in batch mode is:
+
+doors.exe -a <include path> -b batch_script.dxl -u Username -P password
+
+However it is not possible by default to pass arguments to the DXL script. So we have to solve the problem on how to pass data to a DXL script. Here we will choose a very simple solution for this tutorial:
+- We will create a temporary directory for each batch run, where we store parameters and results
+- Inside the temporary directory we will create a wrapper DXL script, that will invoke the batch_script.dxl but first define all parameters inside a global variables. So the invoke call will then be: 
+
+doors.exe -a <include path> -b <our temporary DXL script> -u Username -P password 
+
+Okay, so the problem on how to pass parameters to the DXL script is solved. For starting command line processes we will use the shell.inc library from here: https://www.ibm.com/developerworks/community/forums/html/topic?id=77777777-0000-0000-0000-000014702144
+
+So starting/querying/terminating processes should be easy with this too. Now the questions stands on how to receive the results from a process. Also easy, we will store them in files in the temporary directory, where the calling process can collect them from. 
+
+2. Easy Development of parallelization scripts
+
+If our users (the developers) want to develop the functions that need to be parallelized, they want to be able to quickly test the code they are writing in an interactive way. Our example will be a script, that dumps the contents of a module to an SQL database. So take the following simple function definition: 
+
+// dump module to SQL file
+// @parameter string sModulePath - the fullName of the module to export
+// @return the filename of the generated SQL file 
+string dumpModuleToSQL (string sModulePath) {
+   // ... to be coded ... 
+}
+
+When the developer wants to implement a function like this, he probably wants to be able to switch from interactive mode (e.g. starting the function over the DXL Editor) to parallelized mode (i.e. starting the function over the parallelization framework. So lets design on how the DXL code will look to start a function like this interactively and what modifications we need to do, to be able to run it in parallels. 
+
+// --- example_script.dxl ---
+#include <parallels.inc> 
+
+string dumpModuleToSQL (string sModulePath) {
+    return "Test"; 
+}
+
+if (isBatch()) {
+   // batch mode - so this is parallels main code. 
+   
+   // 1. read parameters
+   string sModulePath = getParallelsParameter("sModulePath"); 
+   // 2. launch function
+   string sResult = dumpModuleToSQL (sModulePath); 
+   // 3. set results 
+   setParallelsResult(sResult); 
+} else {
+     // interactive mode, we are developing ...
+   string sMyModule = "/Playground/Test/MyModule"
+   print dumpModuleToSQL (sMyModule);
+}
+
+Very easy indeed. We simply use the fact, that parallels will execute the scripts in batch mode, so we can use the isBatch() perm to detect if the script is executed in parallel mode or not. You can also see, that parallelizing an existing script is nothing more than getting the parameters from parallels and later writing the results to parallels. Just like it should be. That is really all there is to it. So like this we fulfill the requirement of easy development. Developers can develop in interactive mode and just have to add some code to the file, for it to be able to execute in parallels. The file will stay executable also in interactive mode, where it could show a GUI and even contain the 'controller script' that will actually invoke itself to be executed in parallel! Imagine a script like this: 
+
+// polymorph script self_parallelization.inc - parallelizes itself!
+
+#include <parallels.inc> 
+
+if (isBatch()) {
+   // parallels execution code
+   // ...
+} else {
+   // lets not think about the parameters to much here... just imagine 
+   Skip allDatabaseModules = getAllFormalModuleNamesAsParameters (); 
+   
+   Skip skResults = runParallel ("self_parallelization.inc", allDatabaseModules) 
+}
+
+This script will  - if invoked in interactive mode - call itself through the parallels framework to execute its own function in parallel. So using this very simple mechanism we get something like an 'inline' parallelization in a DXL script. This definitely satisfies the requirements regarding easy development in our user story. 
+
+NOTE: The example code above is only that - an example, to get a look and feel from a user perspective at the library we want to code. When doing library code I would always suggest this procedure - first define how you want to call the functionality you are going to develop. Usually in DXL you have a lot of choices in syntax and structure. The examples above could also have been coded in a completly different way. I came up with the code above by trying out a couple of options. I wrote some code with global variables just to see that it did not work out well. So this step is a really important one - we already made a lot of design decisions implicitly be the code code structure above. We defined for example, how our temporary DXL wrapper will look like (although this might not be clear at the first glance). 
+
+18:45 Software Design & Implementation
+--------------------------------------
+
+Okay, lets get down to business with the software design. For the DXL code I like to go strictly top-down because for me it usually leads to a much nicer code structure, than a typical Bottom-Up approach. So lets look at the components our framework will have. We will define a "Pool" as a component that is responsible for launching workers and collecting their results. The pool knows how much maximum processes are allowed to be started in parallel, can start a worker, pass arguments to it. The worker is something that does some work and returns a result to the Pool. 
+
++-----------------+     +----------------+       +---------------+
+|                 |     |                |       |               |
+|   Main Program  | --> |      Pool      |  -->  |    Workers    |
+|  (User Code)    |     |                |       |               |
++-----------------+     +----------------+       +---------------+
+
+So why do we make such an abstract model of our problem of running DXL scripts in parallel? Well first is, that we said we would go top-down so we find an abstract description of our specific problem. Note that this abstract description does not limit us to parallelizing DXL batch jobs. It could also be extended by being able to launch the workers on a different machine or to parallelize other programs. And the best thing about it is, that it is much easier to implement and test than a specific. problem. Okay, so now that we know the basic components of our application, lets model some classes for them. In this tutorial we will not use UML, but a pseudo object oriented code that will be tranlated to DXL in our implementation. So lets look at the minimal public interfaces of our components: 
+
+abstract class Worker: 
+    void setArgument (string sName, string sValue) <-- set the arguments of the worker (we only support strings at the moment for simplicity)
+    void doWork ()                  <-- perform the work 
+    string getResult ()             <-- get the result after being done (we only support string at the moment for simplicity) 
+}
+
+abstract class Pool: 
+   public Skip Results                      <-- contains the results for the executed workers 
+  
+   void init(int iNrOfParallelProcesses)    <-- Define the max. nr. of processes
+   void enqueue (Worker w)                  <-- enqueue another task, return a handle
+   void wait ()                             <-- process all waiting jobs, will return once all jobs have finished 
+}
+
+Well that looks easy enough. Using that design, we can implement a couple of workers, initialize them and enqueue them in the Pool. Once we instantiated all workers we can call wait() on the pool to allow the Pool to do the processing for all Workers and put the results to the Results Skip. Afterwards we can get the results from the Results array. So as you can see, the top down approach allows us to get the very basics right, before actually going to the complicated part of handling DXL batch jobs. For now we can just implement test our Workers without Batch mode at all. So lets make a quick DXL implementation of those classes. 
+
+19:35 High Level Implementation
+-------------------------------
+
+In DXL we cannot really do inheritance. Normally to subclass a generic worker class to implement a specific worker (one that can greet people) we would do something like this: 
+
+class HelloWorker extends Worker {
+    void doWork () { 
+       string sName = this->getArgument("name"); 
+       this->setResult ("Hello, " sName "!"); 
+    }
+}
+
+where the worker itself would provide the getArgument() and setResult() methods. But we cannot do this in DXL since DXL does not support classes and inheritance directly. In DXL you can define your own datatypes using the undocumented 'struct' keyword. We can use this to define a generic Worker datatype: 
+
+struct Worker {}; 
+
+// virtual function, we can set a callback function at runtime for this worker ...
+void set_doWork (Worker this, void workFunction (Worker)) { /* ... */ }
+
+// and call it later using this function
+void doWork (Worker this) { /* ... */ }
+
+// class methods, not virtual 
+WorkerResult getResult (Worker this) { /* ... */ }
+
+Worker createWorker () { /* ... */ }
+void getWorkerResult (Worker w, string &s) { /* ... */ }
+void setWorkerResult (Worker w, string s) { /* ... */ }
+
+void getWorkerArgument (Worker w, string sName, string &sValue) { /* ... */ }
+void setWorkerArgument (Worker w, string sName, string sValue ) { /* ... */ }
+
+Note that we need to pass the "this" instance explicitly in DXL since we are rebuilding object oriented programming here. If you have not done this before, you will probably struggle on the complexity of the below code. Please note that the code for simulating classes in DXL seems to be very complicated for beginners, but it always has the same structure. This code can also be automatically generated, e.g. from an UML diagram. But that is another tutorial ;-) For details on object oriented programming in DXL you can find a couple of useful posts on the DXL forum. In this tutorial I will give a very brief introduction.  
+
+We can now implement different Workers by just writing the corresponding doWork() callback function, create a new worker and assign our specific doWork function to it. This way we will get the same effect as if we would have had with simple inheritance. So lets to our example worker (like in the above example) in DXL. 
+
+// +--- class Hello Worker ---+
+void Hello_Worker_doWork (Worker this) {
+    string sName = ""; 
+    getWorkerArgument(this, "name", sName);
+    string sResult = "Hello, " sName "!"; 
+    getReult (this, sResult); 
+}
+
+void createHelloWorker (string sName) {
+    Worker w = createWorker(); 
+    setWorkerArgument(w, "name", sName); 
+    set_doWork (w, Hello_Worker_doWork); 
+    return w
+}
+
+So as you can see, using our top down approach, we can implement and test the worker concept completely independent of our main goal of parallelizing DXL scripts. This is essential to manage complexity. I omitted the implementation of the generic worker functions, however now lets complete the generic worker implementation for this you need to know how to implement class methods and virtual functions in DXL. 
+
+For classes in DXL we usually use a DxlObject (i.e. a string key Skip) for storing properties on the instance. So after declaring the struct we define two helpers that allow us to access properties easier on our object. 
+
+struct Worker {}; 
+
+DxlObject DxlObjectOf (Worker w)     { return ((addr_ w ) DxlObject); }
+Worker    WorkerOf    (DxlObject dx) { return ((addr_ dx) Worker);    }
+
+Implementing properties is done using getter and setter methods. To define a private 'Arguments' property that stores a Skip list of arguments we write: 
+
+Skip  getArguments (Worker w) { return ((DxlObjectOf w)->"arguments") Skip }
+void  setArguments (Worker w, Skip value) { (DxlObjectOf w)->"arguments" = value; }
+
+The setArguments function stores the skip list to the internal DXL object and the getArguments function reads it back from the Worker. Virtual methods are a little more complicated. We need three functions for them. One to store the callback (we use an int for that), one function, one to call it and a helper function (to allow us to convert the int back to a function):
+
+// virtual function, we can set a callback function at runtime for this worker ...
+void set_doWork (Worker this, void workFunction (Worker)) { 
+    int ad = (addr_ workFunction) int; // to store the function we cast to 'int'
+    (DxlObjectOf this)->"doWork" = ad; 
+}
+
+// we need this function to 'dereference' the stored callback function, i.e. convert the int we stored back to a function
+void call_doWork(Worker this, void doWorkFunction(Worker)) { doWorkFunction(this) };
+
+// this function will call our stored callback with the 'this' worker as an argument  
+void doWork (Worker this) {
+    int ad = ((DxlObjectOf this)->"doWork") int;
+    call_doWork(this, addr_ ad);   // here we let the call_doWork function cast back from it to function!
+}
+
+So now that we know how to implement virtual functions in DXL, we can put the complete Worker code together: 
+
+struct Worker {};
+
+DxlObject DxlObjectOf (Worker w)     { return ((addr_ w ) DxlObject); }
+Worker    WorkerOf    (DxlObject dx) { return ((addr_ dx) Worker);    }
+
+// +--- Property: Skip Arguments ---+
+Skip  getArguments (Worker w) { return ((DxlObjectOf w)->"arguments") Skip }
+void  setArguments (Worker w, Skip value) { (DxlObjectOf w)->"arguments" = value; }
+
+// +--- Property: Arguments Skip Setters / Getters---+
+void getWorkerArgument (Worker w, string sName, string &sValue) { Skip sk = getArguments(w); find(sk, sName, sValue); }
+void setWorkerArgument (Worker w, string sName, string sValue ) { Skip sk = getArguments(w); put (sk, sName, sValue, true); }
+
+// +--- Property: string Result---+
+string  getWorkerResult (Worker w) { return ((DxlObjectOf w)->"Result") string }
+void    setWorkerResult (Worker w, string value) { (DxlObjectOf w)->"Result" = value; }
+
+// +--- Virtual Method: void doWork() ---+
+// virtual function, we can set a callback function at runtime for this worker ...
+void set_doWork (Worker this, void workFunction (Worker)) { 
+    int ad = (addr_ workFunction) int; 
+    (DxlObjectOf this)->"doWork" = ad; 
+}
+
+// we need this function to 'dereference' the stored callback function, i.e. call it
+void call_doWork(Worker this, void doWorkFunction(Worker)) { doWorkFunction(this) };
+
+// this function will call our stored callback with the 'this' worker as an argument  
+void doWork (Worker this) {
+    int ad = ((DxlObjectOf this)->"doWork") int;
+    call_doWork(this, addr_ ad); 
+}
+
+// +--- constructor---+ 
+Worker createWorker () { 
+    DxlObject dx = new(); 
+    Worker w = WorkerOf (dx);
+    setArguments (w, createString() );
+    return w;
+}
+
+// +--- destructor---+ 
+void deleteWorker (Worker &w) {
+    { Skip sk = getArguments w; delete sk }
+    delete DxlObjectOf w; 
+    w = null; 
+}
+
+And our little reference implementation of the Hello_Worker: 
+
+void Hello_Worker_doWork (Worker this) {
+    string sName = ""; 
+    getWorkerArgument(this, "name", sName);
+    string sResult = "Hello, " sName "!"; 
+    setWorkerResult (this, sResult); 
+}
+
+Worker createHelloWorker (string sName) {
+    Worker w = createWorker(); 
+    setWorkerArgument(w, "name", sName); 
+    set_doWork (w, Hello_Worker_doWork); 
+    return w
+}
+
+And our Test Code: 
+
+Worker hello = createHelloWorker ("World"); 
+doWork(hello); 
+print getWorkerResult(hello);  // prints "Hello World!"
+deleteWorker hello
+
+Wow! Now you will say, that is the most ridiculous "Hello World!" that I have ever seen ;-) You are completely right! But in the end, this object oriented approach allows us to manage complexity for complex programs like our parallelization Framework. 
+
+21:45 Implementation of the Pool 
+--------------------------------
+
+So now the Pool implementation is much faster. We remember our abstract definition of the Pool above. Since the Pool must maintain a queue of Workers we need a couple of properties for internal queue handling, i.e. a Skip for storing the queue items an index to the next free queue slot and an index or the next queue item to execute. Then we need to keep track of the currently executing workers. For this a simple array will be sufficient. Additionally we need something like an processQueue() method, i.e. a method that will 
+- check if any executing workers are done
+  -- if so, the workers are removed from list of currently executing workers and their results put to the results array 
+
+- check if there is are free slots in the list of executing workers 
+  -- if so, take items from the queue and execute them.
+
+Therefore we can detail our Pool class now: 
+
+class Pool:
+   // list of executing workers 
+   int MaxExecutionSlots            <-- Stores how many executions shall happen in parallel
+   Array executingWorkers;          <-- Array that stores the workers that are executing at the moment 
+   void removeWorker (int slot)     <-- Removes a finished worker from the list and puts its result to the results list 
+   int  getNextFreeSlot ()          <-- checks if there is a slot available in the list of execution jobs
+   bool execute (int QueueIndex)    <-- executes the Worker at the defined queueIndex, return true if the worker could be run. 
+ 
+   // queue handling
+   Skip queue                       <-- contains the enqueued workers 
+   int nextQueueIndex               <-- next free index in the queue 
+   int nextQueueIndexToExecute      <-- next item on the queue to execute 
+
+   int enqueue (Worker w)           <-- enqueue another task, return a handle
+   void processQueue ()             <-- function that needs to be called continuously to make the pool tick ...
+   
+   Skip Results                     <-- contains the results for the executed workers 
+  
+   void constructor(int iNrOfParallelProcesses)    <-- Define the max. nr. of processes
+   void wait ()                             <-- process all waiting jobs, will return once all jobs have finished
+   string getQueueResult (int slot)         <-- return the result of queue index 'slot'
+}
+
+So now that we implement the Pool we need to extend our Worker to supply some Status. At the moment all our Workers are automatically done after executing, so the code for this extension is: 
+
+// +--- Property: string Result---+
+bool   getStarted (Worker w) { return ((DxlObjectOf w)->"Started") bool  }
+void   setStarted (Worker w, bool  value) { (DxlObjectOf w)->"Started" = value; }
+
+struct WorkerStatus {}
+WorkerStatus INIT    = addr_ 1
+WorkerStatus RUNNING = addr_ 2
+WorkerStatus DONE    = addr_ 3
+
+WorkerStatus getStatus (Worker w) { return DONE WorkerStatus; }
+
+// modify doWork for this new reflection
+void doWork (Worker this) {
+    if (!getStarted this) {
+       setStarted (this, true); 
+       int ad = ((DxlObjectOf this)->"doWork") int;
+       call_doWork(this, addr_ ad); 
+    }
+}
+
+So lets write some snall test code for our Pool, before actually putting it into DXL (of course we would normally do a lot MORE test code!)
+
+Pool p = createPool 3 // three parallel workers 
+
+Worker w1 = createHelloWorker("One!"); 
+Worker w2 = createHelloWorker("Two!"); 
+Worker w3 = createHelloWorker("Three!"); 
+Worker w4 = createHelloWorker("Four!"); 
+
+enqueue(p, w1); 
+enqueue(p, w2); 
+enqueue(p, w3); 
+enqueue(p, w4); 
+
+if (getStarted w1) error "No job should be started yet!"
+processQueue(p); // first three jobs get started ...
+if (!getStarted w1 || !getStarted w2 || !getStarted w3 || getStarted w4) error "Pool should have started three processes by now!"
+processQueue(p); // results of first three jobs get removed, fourth job is started ...
+if (!getStarted w4) error "Now the queue should have started job 4!"
+
+Ok, now that we have some kind of test code, we can code up the Pool quickly: 
+
+struct Pool {}; 
+
+DxlObject DxlObjectOf (Pool p)     { return ((addr_ p ) DxlObject); }
+Pool      PoolOf    (DxlObject dx) { return ((addr_ dx) Pool);    }
+
+// +--- Property: string Result---+
+int    getMaxSlots (Pool p)      { return ((DxlObjectOf p)->"MaxSlots") int   }
+void   setMaxSlots (Pool p, int   value) { (DxlObjectOf p)->"MaxSlots" = value; }
+
+// +--- Property: Array (MaxSlots, 2) Index 0: Worker  Index 1: Queue Index ---+
+Array getExecutors (Pool p)      { return ((DxlObjectOf p)->"Executors") Array   }
+void  setExecutors (Pool p, Array value) { (DxlObjectOf p)->"Executors" = value; }
+
+// +--- Property: Skip Results --+
+Skip getResults (Pool p)      { return ((DxlObjectOf p)->"Results") Skip   }
+void  setResults (Pool p, Skip value) { (DxlObjectOf p)->"Results" = value; }
+
+// +--- Property: Skip Queue --+
+Skip getQueue (Pool p)      { return ((DxlObjectOf p)->"Queue") Skip   }
+void  setQueue (Pool p, Skip value) { (DxlObjectOf p)->"Queue" = value; }
+
+// +--- Property: string Result---+
+int    getNextQueueIndex (Pool p)      { return ((DxlObjectOf p)->"NextQueueIndex") int   }
+void   setNextQueueIndex (Pool p, int   value) { (DxlObjectOf p)->"NextQueueIndex" = value; }
+
+// +--- Property: string Result---+
+int    getExecutionIndex (Pool p)      { return ((DxlObjectOf p)->"ExecutionIndex") int   }
+void   setExecutionIndex (Pool p, int   value) { (DxlObjectOf p)->"ExecutionIndex" = value; }
+
+void removeWorker (Pool this, int slot) {
+    Worker w = get(getExecutors this, slot, 0)
+    if (!null w && getStatus w == DONE) {
+        int queueIndex = get(getExecutors this, slot, 1);
+        put (getResults this, queueIndex, getWorkerResult w); 
+
+        // clean out slot 
+        put(getExecutors this, null Worker, slot, 0); 
+        put(getExecutors this, -1, slot, 1);
+    }
+}
+
+bool executeWorker (Pool this, int slot) {
+    Worker w = get(getExecutors this, slot, 0)
+    if (null w) {
+        // a free slot! 
+        int nextIndex     = getExecutionIndex this;
+        Worker w = null; 
+        if (find(getQueue this, nextIndex, w)) {
+            // we have something to execute, put it to the executors
+            put(getExecutors this, w, slot, 0); 
+            put(getExecutors this, nextIndex, slot, 1);
+            
+            // start the work 
+            doWork (w);
+            // and increase the execution index ... 
+            setExecutionIndex (this, nextIndex + 1); 
+            return true; 
+        } else {
+            // Nothing in queue
+            return false; 
+        } 
+    } else {
+        return false;
+    }
+    
+}
+
+void enqueue (Pool this, Worker w) {
+    int nextIndex     = getNextQueueIndex this;
+    put (getQueue this, nextIndex, w, true); 
+    setNextQueueIndex (this, nextIndex+1); 
+}
+
+void processQueue (Pool this) {
+    int i = 0, max = getMaxSlots this; 
+    for (i = 0; i < max; i++) removeWorker (this, i); 
+    for (i = 0; i < max; i++) executeWorker(this, i); 
+}
+
+0:00 Part 1 - Final Recap
+-------------------------
+
+So after roughly 4 hours of tutorial writing - what have we done: 
+
+- We looked at the technical problems we will have to solve in our Design of the parallelization Framework and sketched solutions
+- We introduced object oriented Programming in DXL and an example for a Top-Down design approach
+- We have implemented a "Pool" Object that provides an execution queue for Worker items.
+- We have implemented a generic Worker class that supports arguments and results. 
+
+So we are on a good way to our end result (allthough that might not be obvious). It seems we have made an incredible effort for something that could also be done much simpler, but we have reached a very important goal. We divided the complexity of our goal into two different parts. A Worker class for which we will implement a special DXL Batch Job Runner facility and a Pool class. Both classes can be used completely independent of each other - we can test our "Pool" with other workers, e.g. our Hello_Worker. Due to the class approach we can easily implement new features in the classes, without breaking the old ones. One example will be the 'getResults' function of the worker, that we will need to make virtual later. Our interface will not be influenced by this, so our old examples will still work.
+
+
