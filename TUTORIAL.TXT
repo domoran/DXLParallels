@@ -1,4 +1,3 @@
-
 Copyright 2010 by Mathias Mamsch
 This file is part of the Parallels Library 
 
@@ -23,7 +22,7 @@ Okay, let me make a hopefully quick tutorial about to go about how to go about p
 
 What we are going to do in this tutorial is look at the procedure of complex DXL development (of course this can be done in any language) at the example of a parallelization framework, that will allow us to run DXL scripts in parallel. For this tutorial we will only make a minimal example, that is we will not implement a couple of features like progress reporting and convenience functionality that you would expect from a generic parallelization framework. 
 
-Okay, generally ever complex development should start by some requirements/user stories and a design. Note that since we are doing a generic library our "users" are the developers, that want to develop parallel DXL code easily. So lets try to formulate, what a developer would want to do. 
+Okay, generally every complex development should start by some requirements/user stories and a design. Note that since we are doing a generic library our "users" are the developers, that want to develop parallel DXL code easily. So lets try to formulate, what a developer would want to do. 
 
 17:45 User Story
 ----------------
@@ -108,7 +107,7 @@ if (isBatch()) {
 
 This script will  - if invoked in interactive mode - call itself through the parallels framework to execute its own function in parallel. So using this very simple mechanism we get something like an 'inline' parallelization in a DXL script. This definitely satisfies the requirements regarding easy development in our user story. 
 
-NOTE: The example code above is only that - an example, to get a look and feel from a user perspective at the library we want to code. When doing library code I would always suggest this procedure - first define how you want to call the functionality you are going to develop. Usually in DXL you have a lot of choices in syntax and structure. The examples above could also have been coded in a completly different way. I came up with the code above by trying out a couple of options. I wrote some code with global variables just to see that it did not work out well. So this step is a really important one - we already made a lot of design decisions implicitly be the code code structure above. We defined for example, how our temporary DXL wrapper will look like (although this might not be clear at the first glance). 
+NOTE: The example code above is only that - an example, to get a look and feel from a user perspective at the library we want to code. When doing library code I would always suggest this procedure - first define how you want to call the functionality you are going to develop. Usually in DXL you have a lot of choices in syntax and structure. The examples above could also have been coded in a completely different way. I came up with the code above by trying out a couple of options. I wrote some code with global variables just to see that it did not work out well. So this step is a really important one - we already made a lot of design decisions implicitly be the code code structure above. We defined for example, how our temporary DXL wrapper will look like (although this might not be clear at the first glance). 
 
 18:45 Software Design & Implementation
 --------------------------------------
@@ -121,7 +120,7 @@ Okay, lets get down to business with the software design. For the DXL code I lik
 |  (User Code)    |     |                |       |               |
 +-----------------+     +----------------+       +---------------+
 
-So why do we make such an abstract model of our problem of running DXL scripts in parallel? Well first is, that we said we would go top-down so we find an abstract description of our specific problem. Note that this abstract description does not limit us to parallelizing DXL batch jobs. It could also be extended by being able to launch the workers on a different machine or to parallelize other programs. And the best thing about it is, that it is much easier to implement and test than a specific. problem. Okay, so now that we know the basic components of our application, lets model some classes for them. In this tutorial we will not use UML, but a pseudo object oriented code that will be tranlated to DXL in our implementation. So lets look at the minimal public interfaces of our components: 
+So why do we make such an abstract model of our problem of running DXL scripts in parallel? Well first is, that we said we would go top-down so we find an abstract description of our specific problem. Note that this abstract description does not limit us to parallelizing DXL batch jobs. It could also be extended by being able to launch the workers on a different machine or to parallelize other programs. And the best thing about it is, that it is much easier to implement and test than a specific. problem. Okay, so now that we know the basic components of our application, lets model some classes for them. In this tutorial we will not use UML, but a pseudo object oriented code that will be translated to DXL in our implementation. So lets look at the minimal public interfaces of our components: 
 
 abstract class Worker: 
     void setArgument (string sName, string sValue) <-- set the arguments of the worker (we only support strings at the moment for simplicity)
@@ -180,7 +179,7 @@ void Hello_Worker_doWork (Worker this) {
     string sName = ""; 
     getWorkerArgument(this, "name", sName);
     string sResult = "Hello, " sName "!"; 
-    getReult (this, sResult); 
+    getResult (this, sResult); 
 }
 
 void createHelloWorker (string sName) {
@@ -204,7 +203,7 @@ Implementing properties is done using getter and setter methods. To define a pri
 Skip  getArguments (Worker w) { return ((DxlObjectOf w)->"arguments") Skip }
 void  setArguments (Worker w, Skip value) { (DxlObjectOf w)->"arguments" = value; }
 
-The setArguments function stores the skip list to the internal DXL object and the getArguments function reads it back from the Worker. Virtual methods are a little more complicated. We need three functions for them. One to store the callback (we use an int for that), one function, one to call it and a helper function (to allow us to convert the int back to a function):
+The setArguments function stores the skip list to the internal DXL object and the getArguments function reads it back from the Worker. Virtual methods are a little more complicated. We need three functions for them. One to store the callback (we use an int for that), one to call it and a helper function (to allow us to convert the int back to a function):
 
 // virtual function, we can set a callback function at runtime for this worker ...
 void set_doWork (Worker this, void workFunction (Worker)) { 
@@ -353,7 +352,7 @@ void doWork (Worker this) {
     }
 }
 
-So lets write some snall test code for our Pool, before actually putting it into DXL (of course we would normally do a lot MORE test code!)
+So lets write some small test code for our Pool, before actually putting it into DXL (of course we would normally do a lot MORE test code!)
 
 Pool p = createPool 3 // three parallel workers 
 
