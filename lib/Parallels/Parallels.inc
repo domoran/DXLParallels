@@ -47,7 +47,7 @@ void   setExecutionIndex (Pool p, int   value) { (DxlObjectOf p)->"ExecutionInde
 
 void removeWorker (Pool this, int slot) {
     Worker w = get(getExecutors this, slot, 0)
-    if (!null w && getStatus w == DONE) {
+    if (!null w && getStatus w == WORKER_DONE) {
         int queueIndex = get(getExecutors this, slot, 1);
         put (getResults this, queueIndex, getWorkerResult w); 
 

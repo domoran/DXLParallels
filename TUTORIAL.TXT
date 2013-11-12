@@ -260,6 +260,7 @@ Worker createWorker () {
     DxlObject dx = new(); 
     Worker w = WorkerOf (dx);
     setArguments (w, createString() );
+    setWorkerResult(w, "") // set a default here, so that this property will always exist!    
     return w;
 }
 
@@ -464,5 +465,201 @@ So after roughly 4 hours of tutorial writing - what have we done:
 - We have implemented a generic Worker class that supports arguments and results. 
 
 So we are on a good way to our end result (allthough that might not be obvious). It seems we have made an incredible effort for something that could also be done much simpler, but we have reached a very important goal. We divided the complexity of our goal into two different parts. A Worker class for which we will implement a special DXL Batch Job Runner facility and a Pool class. Both classes can be used completely independent of each other - we can test our "Pool" with other workers, e.g. our Hello_Worker. Due to the class approach we can easily implement new features in the classes, without breaking the old ones. One example will be the 'getResults' function of the worker, that we will need to make virtual later. Our interface will not be influenced by this, so our old examples will still work.
+
+
+18:20 Part 2 - Getting to Business - The Commandline Runner
+-----------------------------------------------------------
+
+Okay, so we have a good framework for scheduling our jobs. The next thing to implement is a worker class, that allows us to run command line utilities. Easy start for part 2 of this tutorial. Using the shell class (I slightly modified the old code, see github for the updated code), that we already mentioned in the technical design, we can quickly wrap up a test worker. But here we notice two things: 
+
+void Command_Worker_doWork (Worker this) {
+    string sCommand = ""; 
+    getWorkerArgument(this, "command", sCommand);
+    Shell sh = createShell (sCommand, false); // do not wait 
+    
+    // Here we need to store the shell in the worker, so we can access it later.
+    setWorkerProperty(this, "Command_Worker_Shell", sh); 
+}
+
+Worker createCommandWorker (string sCommand) {
+    Worker w = createWorker(); 
+    setWorkerArgument(w, "command", sCommand);
+    set_doWork (w, Command_Worker_doWork); 
+    return w
+}
+
+1. We need to store the Shell object we created in the worker. For this we make a simple setWorkerProperty method that will just store another key in the underlying DxlObject. 
+
+// +--- Worker Property: for storing custom data on the worker ---+
+void getWorkerProperty (Worker w, string sProp, _y &sValue) { int &ref = addr_ sValue; ref = ((DxlObjectOf w)->"Property_" sProp) int}
+void setWorkerProperty (Worker w, string sProp, _y sValue)  { (DxlObjectOf w)->"Property_" sProp = value int; }
+
+2. Since the CMD runs ansynchonous we need to virtualize the getResults and the getStatus function of the worker, so we can query the underlying process of the worker if it is still running and later get the results from the worker. So we rename the old getStatus(Worker) function to be only the default implementation and code: 
+
+WorkerStatus Worker_getStatus (Worker w) { return DONE WorkerStatus; }
+
+// +--- Virtual Method: void getStatus() ---+
+void set_getStatus (Worker this, WorkerStatus getStatusFunction(Worker)) { int ad = (addr_ getStatusFunction) int; (DxlObjectOf this)->"getStatus" = ad; }
+WorkerStatus call_getStatus(Worker this, WorkerStatus getStatusFunction(Worker)) { return getStatusFunction(this) };
+
+// this function will call our stored callback with the 'this' worker as an argument  
+// modify getStatus for this new reflection
+WorkerStatus getStatus (Worker this) {
+    int ad = ((DxlObjectOf this)->"getStatus") int;
+    return call_getStatus(this, addr_ ad); 
+}
+
+// +--- constructor---+ 
+Worker createWorker () { 
+    ...
+    set_getStatus (w, Worker_getStatus); // in the constructor we set the default function, if the Worker does not override it!
+    ...    
+}
+
+Now take a moment to look at the above code. The first thing you will notice is, that the getStatus definition is just copy/paste from doWork with the difference that doWork did not return a value, while the getStatus() function returns a WorkerStatus. The next thing you will notice is, that all old code (e.g. our HelloWorker example still works, because in the constructor we set the old function as a default implementation. This is the big advantage of the object oriented approach - extending existing functionality is very much possible with that approach. For the getWorkerResult function we notice, that we allowed the possibility for a worker to store a result using the setWorkerResult(Worker, string) function directly in the doWork function. Since we want to stay backward compatible we code up the following: 
+
+// +--- Virtual Method: void getWorkerResult() ---+
+void set_getWorkerResult (Worker this, string getWorkerResultFunction(Worker)) { int ad = (addr_ getWorkerResultFunction) int; (DxlObjectOf this)->"getWorkerResult" = ad; }
+string call_getWorkerResult(Worker this, string getWorkerResultFunction(Worker)) { return getWorkerResultFunction(this) };
+
+// +--- Old Interface: setting the worker result as a string shall still work, if the user has not overridden the function ---+
+string  getWorkerResult_ (Worker w) { return ((DxlObjectOf w)->"Result") string }
+void    setWorkerResult (Worker w, string value) { (DxlObjectOf w)->"Result" = value; }
+
+void getWorkerResult (Worker this) {
+    int ad = ((DxlObjectOf this)->"getWorkerResult") int;
+    if (ad == 0) {
+        return (getWorkerResult_ this) // call the old string variant ... 
+    } else {
+        return call_getWorkerResult(this, addr_ ad); // call the virtual function 
+    } 
+}
+
+To avoid a name clash we renamed the old getWorkerResult(Worker) function, that returns the stored string and call it if the user has not defined a callback function for the getWorkerResult. In this case we do not set a default implementation in the constructor (of course we could have also gone that way). So after coding that, we try our HelloWorker example and it still works. Good. Now we can the complete CommandWorker: 
+
+void Command_Worker_doWork (Worker this) {
+    string sCommand = ""; 
+    getWorkerArgument(this, "command", sCommand);
+    Shell sh = createShell (sCommand, false); // do not wait 
+    
+    // Here we need to store the shell in the worker, so we can access it later.
+    setWorkerProperty(this, "Command_Worker_Shell", sh); 
+}
+
+string Command_Worker_getWorkerResult(Worker this) {
+    Shell sh = null; 
+    getWorkerProperty(this, "Command_Worker_Shell", sh); 
+    string sOutput = getOutput sh;
+    int iExit = getExitCode sh;
+    if (!null sOutput ) return iExit "\n" sOutput
+    return iExit ""; 
+}
+
+WorkerStatus Command_Worker_getWorkerStatus(Worker this) {
+    Shell sh = null; 
+    getWorkerProperty(this, "Command_Worker_Shell", sh); 
+    ShellState state = getStatus(sh); 
+    if (state == ShellState_RUNNING) return WORKER_RUNNING;
+    return WORKER_DONE;
+}
+
+
+Worker createCommandWorker (string sCommand) {
+    Worker this = createWorker(); 
+    setWorkerArgument(this, "command", sCommand);
+    set_doWork (this, Command_Worker_doWork); 
+    set_getStatus(this, Command_Worker_getWorkerStatus);
+    set_getWorkerResult(this, Command_Worker_getWorkerResult);
+    return this;
+}
+
+And of course some test code (CommandWorker.dxl):
+
+Worker wrkCommand = createCommandWorker ("notepad");  
+// Worker wrkCommand = createCommandWorker ("cmd /C dir");  
+doWork(wrkCommand); 
+
+while(getStatus(wrkCommand) == WORKER_RUNNING) {
+    sleep_ 50
+}
+
+print "Result: '" (getWorkerResult wrkCommand) "'"; 
+
+When running this code, we have notepad popping up and the DXL is waiting for notepad to close. Unfortunately notepad returns no result. So we only get exit code 0. So instead of running notepad try the other variant. You will be getting a directory listing of your directory back from the worker. 
+
+Awesome!! Now we have a worker that executes any command asynchronously and returns its exitcode and output to us. So lets do something useful with that. We want to check if we can now plug this command worker together with the pool to speed up a CPU bound one process operation. Lets code up some small batch script to check if a number is a prime number (which should be CPU bound!). 
+
+@echo off & setlocal enabledelayedexpansion
+if /I "%1 < 2" goto no
+if "%1"=="2" goto yes
+set /a even="%1 %% 2"
+if "%even%"=="0" goto no
+set /a rangemax=((%1+1)/2)
+
+for /l %%i in (3,2,%rangemax%) do (
+    set /A rem="%1 %% %%i"
+    if !rem! equ 0 goto no
+)
+
+:yes
+echo YES
+goto :eof
+
+:no
+echo NO
+
+Save that file, for example to c:\temp\prime.bat. Then lets try the following example: 
+
+int max = 100; 
+
+Pool p = createPool 3 // three parallel workers 
+
+
+int i; for (i = 0; i < max; i++) {
+    Worker w = createCommandWorker("cmd /C c:\\temp\\isprime.bat " i "")
+    enqueue(p, w); 
+}
+
+int iStart = getTickCount_()
+wait(p); 
+int iEnd = getTickCount_()
+
+for (i = 0; i < max; i++) print "I=" i "==>" ((getQueueResult(p, i))[2:]) ;
+print "Time Taken: " (iEnd - iStart) " ms\n"
+
+As you can see, we are calculating the prime numbers from 0..max using our small batch script in parallel. Here we should see a difference between having 3 parallel workers and having only one. For my computer I get the following results: 
+
+8 Workers: 2574 ms
+7 Workers: 2730 ms
+6 Workers: 2918 ms
+5 Workers: 3120 ms
+4 Workers: 3557 ms
+3 Workers: 4586 ms
+2 Workers: 6240 ms
+1 Workers: 10936 ms
+
+You can see, that using a pool with more workers definitely speed up the calculation, although this is not representative because in this case starting up the processes takes much more time than the actual prime number calculation itself. However this changes when you do:
+
+...
+int max = 100; 
+Pool p = createPool 2 // two parallel workers 
+int i; for (i = 0; i < max; i++) {
+    Worker w = createCommandWorker("cmd /C c:\\temp\\isprime.bat " (i+1000000) "")
+    enqueue(p, w); 
+}
+...
+
+This will try to calculate if the numbers from 1000000+x are prime, which takes much longer. If looking at your task monitor you can see your CPU usage depending on the number of pool workers you assign. If you employ less that you have CPUs you will see a speed decrease. For my 8 Virtual Cores and 2 Workers (25%) I get for 100 primes > 1000000 a time of 78 seconds and - of course - an average CPU usage of 25%. If I do the same with 8 workers I get 36 secs. Less than half the time. That is kind of an increase. We will see if parallelizing DXL batch jobs will bring us something. 
+
+00:00 Recap of Part 2
+---------------------
+
+Well now we are getting nearer. Our Pool implementation works fine and automating parallel commandline jobs is now a piece of cake. We saw how by clever extension of our Worker classes we could adapt to the new requirements of the CommandWorker without influcencing the old behaviour (our HelloWorker). We tested that by parallelizing command line jobs we can get a speed increase. Now all we need to do is subclass the CommandLineRunner again to have a DOORS Batch Job Runner and then implement the 'parallels.inc' interface, so we can come to the point where our initial design will fit to our implementation. 
+
+
+
+
+
+
 
 

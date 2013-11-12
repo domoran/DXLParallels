@@ -47,7 +47,7 @@ void   setExecutionIndex (Pool p, int   value) { (DxlObjectOf p)->"ExecutionInde
 
 void removeWorker (Pool this, int slot) {
     Worker w = get(getExecutors this, slot, 0)
-    if (!null w && getStatus w == DONE) {
+    if (!null w && getStatus w == WORKER_DONE) {
         int queueIndex = get(getExecutors this, slot, 1);
         put (getResults this, queueIndex, getWorkerResult w); 
 
@@ -111,4 +111,24 @@ string getQueueResult (Pool this, int index) {
     string sResult = null; 
     find (getResults this, index, sResult); 
     return sResult; 
+}
+
+void wait (Pool this) {
+    // first wait until all jobs are started ...
+    while (getExecutionIndex this < getNextQueueIndex this) {
+        processQueue(this); 
+        sleep_ 100;
+    }
+    int max = getMaxSlots this; 
+    // then wait until the execution queue is empty
+    while (true) {
+        processQueue(this);
+        bool bAllEmpty = true; 
+        for (i = 0; i < max; i++) { 
+            Worker w = (Worker get(getExecutors this, i, 0));
+            if (!null w) bAllEmpty = false; 
+        }
+        if (bAllEmpty) break;
+        sleep_ 100; 
+    }
 }
