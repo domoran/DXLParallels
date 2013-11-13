@@ -656,10 +656,205 @@ This will try to calculate if the numbers from 1000000+x are prime, which takes 
 
 Well now we are getting nearer. Our Pool implementation works fine and automating parallel commandline jobs is now a piece of cake. We saw how by clever extension of our Worker classes we could adapt to the new requirements of the CommandWorker without influcencing the old behaviour (our HelloWorker). We tested that by parallelizing command line jobs we can get a speed increase. Now all we need to do is subclass the CommandLineRunner again to have a DOORS Batch Job Runner and then implement the 'parallels.inc' interface, so we can come to the point where our initial design will fit to our implementation. 
 
+21:00 Part 3 - Implementing the batch worker
+--------------------------------------------
+
+Okay, since the command line worker is active we should now get to the gist of all. Running batch jobs. In Part 1 we have seen, that "subclassing" in DXL can be emulated by virtualizing and overriding class methods. It should be noted, that normally you would have different class names for your types, e.g. Hello_Worker, Worker, Command_Worker. We could have done this, but for DXL this makes most sense, if one class has additional methods over its base class. In our case it is sufficient to use the base worker class for all "subclasses". 
+
+So for creating the batch-worker we should think about our technical design for a bit. If we want something like a self parallelizing script, we will need the batch script to have the same include environment as the calling DXL scripts. Otherwise the batch script will probably fail on relative includes. Fortunately for DOORS we can read the addins/projectaddins path very easily (we will skip layoutaddins, attributeaddins, ... here). So let us whip up a function that will give us the include path (you can find the searchStrings sourcecode in string strings.inc library on github, which is omitted here for more crispness); 
+
+Skip getCurrentIncludePath () {
+    Skip sk = create(); 
+    Buffer buf = create(); 
+    string sRegexp = "^[ ]*([^;]*)(;|$)";
+    buf = getenv "ADDINS"            ; searchStrings(buf, sRegexp, sk, false, true, 1); 
+    buf = getenv "DOORSADDINS"       ; searchStrings(buf, sRegexp, sk, false, true, 1); 
+    buf = getenv "PROJECTADDINS"     ; searchStrings(buf, sRegexp, sk, false, true, 1); 
+    buf = getenv "DOORSPROJECTADDINS"; searchStrings(buf, sRegexp, sk, false, true, 1);
+    return sk;
+}
+
+// We will need that for our batch later as a semicolon separated string, so make a convenience join
+string getIncludePathString () {
+    Skip sk = getCurrentIncludePath(); 
+    string result = joinStrings(sk, ";");
+    delete sk; 
+    return result;
+}
+
+// get the current DOORS executable
+string getDoorsExecutable () { return (getenv "DOORSHOME") "\\bin\\doors.exe"; }
+
+Note that DXL Security is not taken into account here, but that would probably also be easy enough. However DXL Security adds other problems, that is why it is omitted for the sake of simplicity. So lets make a test for our DoorsBatchWorker. To run a batch file we need the file and user credentials. As we already said the include path can be handed to the DOORS Batch script by using the above functions. We will write a DXL Script with the simple code: cout << "It worked!"  to a temporary file and run it using our Batch worker. Note that we use the cout command since that is the only way of writing to the standard console output from a DXL program. Using print would instead pop up a message in a DOORS batch window and our Shell class would not be able to grab it from the output. For simplicity we will use our Pool to monitor the completion of the code. 
+
+// DOORS User Credentials
+// Note: not using a password here, will only work if your DB is configured without passwords
+string sUser     = "Administrator"
+string sPassword = "";  
+
+// Write a temporary DXL file 
+string sTemp = tempFileName() ".dxl"
+Stream strm  = write sTemp;
+// output to stdout here, otherwise you wont get output in batch mode
+strm << "cout << \"It worked!\""
+close strm; 
+
+// Let our DOORS Batch Worker do its magic, we will use the pool to wait for it. 
+Pool p = createPool 1
+enqueue(p, createDoorsBatchWorker (sTemp, sUser, "") );
+wait(p);  
+print "Result: '" getQueueResult(p, 0) "'"; 
+
+Okay, so now we got the test code, lets code up our DOORS_Batch_Worker:
+
+Worker createDoorsBatchWorker (string sFile, string sUser, string sPassword) {
+    string sData   = getEnvironment("DATA");
+    string sAddins = getIncludePathString (); 
+      
+    sCommand = getDoorsExecutable() " " // -
+              (!null sData     ? ("-d " sData " " ) : "") // -
+              (!null sAddins   ? ("-a " sAddins " ") : "") // -
+              "-b \"" sFile "\" " // -
+              "-u \"" sUser "\" " // -
+              (!null sPassword ? ("-P " sPassword) " " : "") // -
+              ""
+              
+    // print "Command: " sCommand "\n"
+    
+    Worker this = createCommandWorker(sCommand); 
+    return this;
+}
+
+We already solved the problem of starting and monitoring command line processes, so our DOORS Batch Worker is nothing more, than just compiling the command line arguments for our DOORS batch call. Note that the command line arguments are splitted here to several lines for readability using line comments that end on a '-' (which will make the line continue. If there would be a space after the '-' characters string concatenation would not work anymore. So we run it and our worker returns "0\nIt worked!". Awesome! So batch jobs now work. Lets try to run a function by writing the code 
+
+strm << "
+#include <lib/Parallels/Worker.inc>
+#include <lib/Parallels/Pool.inc>
+#include <lib/core/shell.inc>
+#include <lib/core/strings.inc>
+#include <lib/Parallels/CommandWorker.inc>
+#include <lib/Parallels/DoorsBatchWorker.inc>
+cout << getIncludePathString()
+"
+
+Also works. So handing over the include path works too. So before we come now to handing making the parallels.inc API to hand over arguments to the called DXL script (do not mistake our Worker arguments as arguments to the DXL script we run) lets quickly tackle our idea of self parallelization. All we would need to do is to find out, which DXL it is we are running from. Not to complicated using the dxlHere command, which will give you a trackback of a function, the last line of that traceback being the file where everything was run from. Without going into the details I provided a getCurrentFile() example implementation in the Doors_Batch_Worker file, so that self parallelization is indeed possible. So this code here: 
+
+string sUser     = "Administrator"
+string sPassword = "";
+
+if (isBatch()) {
+    cout << "Self parallelization rules!"; 
+} else {
+    Pool p = createPool 1 // one worker
+    enqueue(p, createDoorsBatchWorker (getCurrentFile(), sUser, "") );
+    wait(p);  
+    print "Result: '" getQueueResult(p, 0) "'";
+}
+
+really works and prints out "Result: '0\nSelf parallelization rules!'". Now isnt this cool? Alright lets come to the last part of our design, the handover of parameters to the file. As I already noted, the parameters we are talking about have nothing to do with the worker parameters and the function setWorkerProperty! When the Doors_Batch_Worker calls a batch script it does not know that it was called from a worker! So our initial design was, to create a temporary directory, where to put the files. Well easy enough. Now lets create the functions that will allow us to write the wrapper files and create the temp directories: 
+
+string makeTemporaryDirectory (Worker this) { 
+    string sTempDir = tempFileName(); 
+    mkdir sTempDir; 
+    mkdir sTempDir "\\arguments"
+    mkdir sTempDir "\\results"
+    setWorkerProperty(this, "tempdir", sTempDir);
+    return sTempDir;
+}
+
+string getTempDirectory   (Worker this) { string s; getWorkerProperty(this, "tempdir", s); return s; }
+string getWrapperFilename (Worker this) { (getTempDirectory this) "\\wrapper.dxl"; }
+
+void setParallelsParameter (Worker this, string sName, string sValue) {
+    Stream st = write (getTempDirectory this) "\\arguments\\" sName; 
+    st << sValue
+    close st
+}
+
+We will create two subdirectories in the temp directory 'arguments' and 'results'. From there the DXL programs can read/write their arguments results. The setParallelsParameter writes a text file with the contents of the string argument to the arguments directory. For the batch script we provide a function to read back the contents of that file: 
+
+string getParallelsParameter(string sName) {
+    noError(); 
+    string sDirectory = eval_ "noError(); return_ GS_PARALLELS_DIRECTORY; lastError();"
+    print lastError(); 
+    if (null sDirectory) error "No parallels directory defined! Call this function only from parallelized scripts!"
+    return readFile(sDirectory "\\arguments\\" sName); 
+}
 
 
+So now we need to override the doWork() function and change the constructor of the Doors_Batch_Worker to create a wrapper file: 
+
+void Doors_Batch_Worker_doWork (Worker this) {
+    string sWrapper   = getWrapperFilename(this);
+    string sBatchFile = null; 
+    getWorkerProperty(this, "batchfile", sBatchFile)
+    
+    // write wrapper file 
+    Stream st = write sWrapper;
+    st << "string GS_PARALLELS_DIRECTORY=\"" (replaceSlashes (getTempDirectory this, "\\\\")) "\"\n"
+    st << "#include <" (replaceSlashes(sBatchFile, "/")) ">";
+    close st; 
+    
+    Command_Worker_doWork(this);
+}
+
+Worker createDoorsBatchWorker (string sFile, string sUser, string sPassword) {
+    string sData   = getEnvironment("DATA");
+    string sAddins = getIncludePathString (); 
+    
+    Worker this = createCommandWorker("");
+    makeTemporaryDirectory(this); 
+    
+    setWorkerProperty(this, "tempdir", sTemp);
+    setWorkerProperty(this, "batchfile", sFile string);
+     
+    sCommand = getDoorsExecutable() " " // -
+              (!null sData     ? ("-d " sData " " ) : "") // -
+              (!null sAddins   ? ("-a \"" sAddins "\" ") : "") // -
+              "-b \"" (getWrapperFilename this) "\" " // -
+              "-u \"" sUser "\" " // -
+              (!null sPassword ? ("-P " sPassword) " " : "") // -
+              "-W -l \"" (sTemp "\\errors.txt")
+              
+    setWorkerArgument(this, "command", sCommand);
+    set_doWork (this, Doors_Batch_Worker_doWork);
+    return this;
+} 
+
+And voila! Now we can run the following code: 
+
+string sUser     = "Administrator"
+string sPassword = "";
+
+if (isBatch()) {
+    cout << "The Parameter was '" (getParallelsParameter "test") "'"
+} else {
+    Pool p = createPool 1 // one worker
+    Worker wBatch = createDoorsBatchWorker (getCurrentFile(), sUser, sPassword) 
+    setParallelsParameter(wBatch, "test", "A Parameter");
+    enqueue(p, wBatch);
+    wait(p);  
+    print "Result: '" getQueueResult(p, 0) "'";
+} 
+
+which now returns: 
+Result: 0
+The Parameter was 'A Parameter'
 
 
+00:30 DONE!
+-------------------------
+Congratulations if you were able to follow this tutorial that far. What have we managed: 
+- we wrote a complete parallelization framework for DOORS.dxl that allows us to do inplace parallelization of DXL code. 
+- we made a technical/software design and followed the design by a top-down implementation procedure
+- we learned about the principle of "divide and conquer" to solve complex programming tasks: 
+  - we started top down with a very general description of a 'Worker' and a 'Pool' and were able to implement 
+    and test them separately from each other. 
+  - we then created a commandline worker, which we then extended to be a DOORS Batch Runner, which we then extended to 
+    support additional features like parameter handover.
+  - we saw how by featuring pseudo object oriented programming in DXL we can easily extend existing code by virtualizing
+    functions. 
 
+What is left? Lots! We did not focus on error handling a lot during this whole tutorial. Also cleanup of data, handling of more complex parameters / return values, etc. is not implemented yet. 
 
-
+And of course what is yet missing is a real world parallelization example, that will show us, if parallelizing DOORS DXL scripts in batch mode will really bring any spreed difference.

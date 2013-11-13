@@ -1,0 +1,45 @@
+/*
+    Copyright 2013 by Mathias Mamsch
+    This file is part of the Parallels Library 
+
+    The Parallels Library  is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The Parallels Library  is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
+*/
+#include <lib/core/strings.inc>
+
+Buffer bufSearch = create(); 
+
+string test_searchStrings (string s, string sPattern,  bool keepEmpty, bool noDuplicates, int iGroup) {
+    Skip sk = create();
+    bufSearch = s; 
+    searchStrings(bufSearch, sPattern, sk, keepEmpty, noDuplicates, iGroup)
+    string sResult = joinStrings(sk, "#");
+    delete sk;
+    return sResult;
+}
+
+string sPattern = "^[ ]*([^;]*)(;|$)";
+if (test_searchStrings("", sPattern, true, true, 1) != "") error "Empty Test failed!"
+if (test_searchStrings("abc", sPattern, true, true, 1) != "abc") error "Single value test failed!"
+if (test_searchStrings("abc;def", sPattern, true, true, 1) != "abc#def") error "Two value test failed"
+if (test_searchStrings("abc;def;abc", sPattern, true, true, 1) != "abc#def") error "Duplicate test 1 failed!"
+if (test_searchStrings("abc;def;abc", sPattern, true, false, 1) != "abc#def#abc") error "Duplicate test 2 failed!"
+
+if (test_searchStrings("abc;def;;", sPattern, true, true, 1) != "abc#def#") error "Keep Empty test 1 failed!"
+if (test_searchStrings(";abc;def;", sPattern, true, true, 1) != "#abc#def") error "Keep Empty test 2 failed!"
+if (test_searchStrings("abc;;def", sPattern, true, true, 1) != "abc##def") error "Keep Empty test 3 failed!"
+
+if (test_searchStrings("abc;def;;", sPattern, false, true, 1) != "abc#def") error "Keep Empty test 4 failed!"
+if (test_searchStrings(";abc;def;", sPattern, false, true, 1) != "abc#def") error "Keep Empty test 5 failed!"
+if (test_searchStrings("abc;;def", sPattern, false, true, 1) != "abc#def") error "Keep Empty test 6 failed!"
+

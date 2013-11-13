@@ -20,20 +20,20 @@
 #include <lib/Parallels/Pool.inc>
 
 #include <lib/core/shell.inc>
+#include <lib/core/strings.inc>
 #include <lib/Parallels/CommandWorker.inc>
+#include <lib/Parallels/DoorsBatchWorker.inc>
 
-int max = 100; 
+string sUser     = "Administrator"
+string sPassword = "";
 
-Pool p = createPool 8 // eight parallel workers 
-
-int i; for (i = 0; i < max; i++) {
-    Worker w = createCommandWorker("cmd /C c:\\temp\\isprime.bat " (i+1000000) "")
-    enqueue(p, w); 
-}
-
-int iStart = getTickCount_()
-wait(p); 
-int iEnd = getTickCount_()
-
-// for (i = 0; i < max; i++) print "I=" i "==>" ((getQueueResult(p, i))[2:]) ;
-print "Time Taken: " (iEnd - iStart) " ms\n"
+if (isBatch()) {
+    cout << "The Parameter was '" (getParallelsParameter "test") "'"
+} else {
+    Pool p = createPool 1 // one worker
+    Worker wBatch = createDoorsBatchWorker (getCurrentFile(), sUser, sPassword) 
+    setParallelsParameter(wBatch, "test", "A Parameter");
+    enqueue(p, wBatch);
+    wait(p);  
+    print "Result: " getQueueResult(p, 0);
+} 
