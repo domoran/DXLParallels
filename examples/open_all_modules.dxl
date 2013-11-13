@@ -1,0 +1,56 @@
+/*
+    Copyright 2013 by Mathias Mamsch
+    This file is part of the Parallels Library 
+
+    The Parallels Library  is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The Parallels Library  is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include <lib/Parallels/Worker.inc>
+#include <lib/Parallels/Pool.inc>
+
+#include <lib/core/shell.inc>
+#include <lib/core/strings.inc>
+#include <lib/Parallels/CommandWorker.inc>
+#include <lib/Parallels/DoorsBatchWorker.inc>
+
+string sUser     = "Administrator"
+string sPassword = "";
+
+if (isBatch()) {
+    // this is the batch code!
+    ModName_ mn = module getParallelsParameter "item"; 
+    cout << "Processing module '" (rootName_ mn) "'"
+    Module mod = read (fullName mn, false); 
+    close mod; 
+} else {
+    Pool p = createPool 4 // four parallel workers
+    
+    Project prj = current
+    Item I; for I in prj do {
+        if (type I != "Formal" || isDeleted I) continue 
+        
+        Worker wBatch = createDoorsBatchWorker (getCurrentFile(), sUser, sPassword) 
+        setParallelsParameter(wBatch, "item", fullName I);
+        enqueue(p, wBatch);
+    }
+    
+    // parallel processing starts here
+    int iStart = getTickCount_()
+    wait(p); 
+    int iEnd = getTickCount_()
+    
+    // for (i = 0; i < max; i++) print "I=" i "==>" ((getQueueResult(p, i))[2:]) ;
+    print "Time Taken: " (iEnd - iStart) " ms\n"
+    string sReturn; for sReturn in getResults(p) do print sReturn "\n"; 
+} 
