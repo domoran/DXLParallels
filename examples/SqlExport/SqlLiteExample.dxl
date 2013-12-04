@@ -1,0 +1,48 @@
+/*
+    Copyright 2013 by Mathias Mamsch
+    This file is part of the Parallels Library 
+
+    The Parallels Library  is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The Parallels Library  is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include <lib/Parallels/Worker.inc>
+
+#include <lib/core/Strings.inc>
+#include <lib/core/System.inc>
+
+#include <lib/core/Shell.inc>
+#include <lib/Parallels/CommandWorker.inc>
+#include <lib/core/StreamEx.inc>
+
+#include <lib/core/SQLite.inc>
+
+SQLite sq = createSQLite("C:\\temp\\mydb.sql", true);
+serializeString(getCurrentFile(sq), ".output stdout\n");
+serializeString(getCurrentFile(sq), "create table modules(id integer, text text);\n");
+serializeString(getCurrentFile(sq), "insert into modules values(1, 'Hällo');\n");
+serializeString(getCurrentFile(sq), "insert into modules values(2, 'Welt');\n");
+serializeString(getCurrentFile(sq), "select * from modules;\n");
+
+string sCommand = getCommandForExecution_(sq);
+Worker wrkCommand = createCommandWorker (sCommand);
+doWork(wrkCommand); 
+waitFor wrkCommand;
+
+if (getWorkerResult wrkCommand != "0") {
+    print "SQLite invocation failed!"; 
+} else {
+    // Buffer leaks intended ;-) 
+    if (getResult sq "" != "1|Hällo\n2|Welt\n") error "Expected '1|Hällo\\n2|Welt\\n. Got: ###" (getResult sq) "\n"
+    print "###" getResult(sq) "###\n";
+}

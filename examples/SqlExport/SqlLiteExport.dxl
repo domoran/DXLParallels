@@ -1,0 +1,106 @@
+/*
+    Copyright 2013 by Mathias Mamsch
+    This file is part of the Parallels Library 
+
+    The Parallels Library  is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    The Parallels Library  is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include <lib/Parallels/Worker.inc>
+#include <lib/Parallels/Pool.inc>
+
+#include <lib/core/Strings.inc>
+
+#include <lib/core/Shell.inc>
+#include <lib/core/System.inc>
+#include <lib/Parallels/CommandWorker.inc>
+#include <lib/Parallels/DoorsBatchWorker.inc>
+
+#include <lib/core/StreamEx.inc>
+#include <lib/core/SQLite.inc>
+
+// the data structures we use for dumping the SQL contents 
+string sDBFile = "C:\\temp\\mydb.sql";
+deleteFile sDBFile; 
+SQLite db        = createSQLite(sDBFile, true);
+Buffer bufTemp    = create(50000); 
+
+void setupStructureTriggers (SQLite db) {
+    StreamEx strmDump = getCurrentFile(db);
+    serializeString (strmDump, "drop trigger if exists item_tree; create trigger item_tree after insert on items BEGIN 
+                                     insert into structure values (new.item_id, new.object_id, new.parent_id, new.id, 1); 
+                                     insert into structure select c.parent, new.id, c.depth+1 
+                                            from structure c where c.child = new.parent;
+                                END;");
+}
+
+void setupDoorsDatabase (SQLite db) {
+    StreamEx strmDump = getCurrentFile(db);
+
+    serializeString(strmDump, "
+                               create table item_structure (doors_id integer, parent integer, depth integer);
+                               create table items  (doors_id integer PRIMARY KEY, parent integer, type TEXT, name TEXT);
+                               
+                               create table object_structure (id integer, parent integer, depth integer);
+                               create table objects (absNo integer, parent_object integer, parent_module integer, deleted integer);
+                               ");
+                               
+    serializeString(strmDump, "
+                               create trigger item_tree after insert on items BEGIN
+                                  insert into item_structure values (new.doors_id, new.parent, 1); 
+                                  insert into item_structure select new.doors_id, c.parent, c.depth + 1 from item_structure c where c.doors_id = new.parent;
+                               END;
+                               "); 
+                                   
+                               
+    /*                            
+    serializeString(strmDump, "create table objects(item_id integer, absNo integer, deleted NUMERIC,
+                                      FOREIGN KEY(item_id) references items(id));\n");
+                               
+                                      
+    serializeString(strmDump, "create table attribute_values(item_id NUMERIC, object_id NUMERIC, attribute_name TEXT, attribute_value TEXT);\n");
+    */
+    // create root node 
+    // serializeString(strmDump, "insert into items values (0, NULL, 'DB', 'DB');\n"); 
+} 
+
+void createTestData (SQLite db) {
+    StreamEx strmDump = getCurrentFile(db);
+    serializeString(strmDump, "insert into items values (1, 0, 'Folder', 'Test');\n"); 
+    serializeString(strmDump, "insert into items values (2, 0, 'Folder', 'Folders');\n"); 
+    serializeString(strmDump, "insert into items values (3, 1, 'Folder', 'Level 1a');\n"); 
+    serializeString(strmDump, "insert into items values (4, 1, 'Folder', 'Level 1b');\n"); 
+    serializeString(strmDump, "insert into items values (5, 3, 'Formal', 'Mod A');\n"); 
+    serializeString(strmDump, "insert into items values (6, 2, 'Formal', 'Mod B');\n");
+}
+
+// setupStructureTriggers (db); 
+setupDoorsDatabase (db); 
+
+createTestData (db); 
+
+serializeString(getCurrentFile db, "select * from item_structure where parent = 1 and depth=1;\n"); 
+//serializeString(getCurrentFile db, "select * from item_structure where doors_id = 4;\n"); 
+
+
+string sCommand = getCommandForExecution_(db);
+print sCommand "\n"
+Worker wrkCommand = createCommandWorker (sCommand);
+waitFor doWork(wrkCommand);
+
+if (getWorkerResult wrkCommand != "0") {
+    print "SQLite invocation failed: " (getWorkerResult wrkCommand) "\n"; 
+} else {
+    // Buffer leaks intended ;-) 
+    print "##-\n" getResult(db) "-##\n";
+}
