@@ -17,23 +17,18 @@
 */
 
 #include <lib/Parallels/Worker.inc>
-#include <lib/Parallels/Pool.inc>
 
 #include <lib/core/Shell.inc>
-#include <lib/core/Strings.inc>
-#include <lib/core/System.inc>
-
 #include <lib/Parallels/CommandWorker.inc>
-#include <lib/Parallels/DoorsBatchWorker.inc>
 
-string sUser     = "Administrator"
-string sPassword = "";
-
-if (isBatch()) {
-    cout << "Self parallelization rules!"; 
-} else {
-    Pool p = createPool 1 // one worker
-    enqueue(p, createDoorsBatchWorker (getCurrentFile(), sUser, sPassword) );
-    wait(p);  
-    print "Result: '" getQueueResult(p, 0) "'";
-} 
+Buffer buf = create(); 
+string s = tempFileName() 
+int i = 0; for (i = 200; i < 300; i++) {
+	string sCommand = "cmd /C echo Hallo >"
+	setempty(buf); 
+	int j = 0; for (j = 0; j < i; j++) buf += "X"
+	Worker wrkCommand = createCommandWorker (sCommand s buf "");
+	doWork(wrkCommand); 
+	waitFor (wrkCommand); 
+	if (!fileExists_ s buf "") error "File with length " (length s buf "") " could not be created!";
+}

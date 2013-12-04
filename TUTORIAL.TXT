@@ -50,7 +50,7 @@ However it is not possible by default to pass arguments to the DXL script. So we
 
 doors.exe -a <include path> -b <our temporary DXL script> -u Username -P password 
 
-Okay, so the problem on how to pass parameters to the DXL script is solved. For starting command line processes we will use the shell.inc library from here: https://www.ibm.com/developerworks/community/forums/html/topic?id=77777777-0000-0000-0000-000014702144
+Okay, so the problem on how to pass parameters to the DXL script is solved. For starting command line processes we will use the Shell.inc library from here: https://www.ibm.com/developerworks/community/forums/html/topic?id=77777777-0000-0000-0000-000014702144
 
 So starting/querying/terminating processes should be easy with this too. Now the questions stands on how to receive the results from a process. Also easy, we will store them in files in the temporary directory, where the calling process can collect them from. 
 
@@ -661,7 +661,7 @@ Well now we are getting nearer. Our Pool implementation works fine and automatin
 
 Okay, since the command line worker is active we should now get to the gist of all. Running batch jobs. In Part 1 we have seen, that "subclassing" in DXL can be emulated by virtualizing and overriding class methods. It should be noted, that normally you would have different class names for your types, e.g. Hello_Worker, Worker, Command_Worker. We could have done this, but for DXL this makes most sense, if one class has additional methods over its base class. In our case it is sufficient to use the base worker class for all "subclasses". 
 
-So for creating the batch-worker we should think about our technical design for a bit. If we want something like a self parallelizing script, we will need the batch script to have the same include environment as the calling DXL scripts. Otherwise the batch script will probably fail on relative includes. Fortunately for DOORS we can read the addins/projectaddins path very easily (we will skip layoutaddins, attributeaddins, ... here). So let us whip up a function that will give us the include path (you can find the searchStrings sourcecode in string strings.inc library on github, which is omitted here for more crispness); 
+So for creating the batch-worker we should think about our technical design for a bit. If we want something like a self parallelizing script, we will need the batch script to have the same include environment as the calling DXL scripts. Otherwise the batch script will probably fail on relative includes. Fortunately for DOORS we can read the addins/projectaddins path very easily (we will skip layoutaddins, attributeaddins, ... here). So let us whip up a function that will give us the include path (you can find the searchStrings sourcecode in string Strings.inc library on github, which is omitted here for more crispness); 
 
 Skip getCurrentIncludePath () {
     Skip sk = create(); 
@@ -730,8 +730,8 @@ We already solved the problem of starting and monitoring command line processes,
 strm << "
 #include <lib/Parallels/Worker.inc>
 #include <lib/Parallels/Pool.inc>
-#include <lib/core/shell.inc>
-#include <lib/core/strings.inc>
+#include <lib/core/Shell.inc>
+#include <lib/core/Strings.inc>
 #include <lib/Parallels/CommandWorker.inc>
 #include <lib/Parallels/DoorsBatchWorker.inc>
 cout << getIncludePathString()

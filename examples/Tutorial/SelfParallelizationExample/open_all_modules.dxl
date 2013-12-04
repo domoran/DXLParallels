@@ -21,6 +21,7 @@
 
 #include <lib/core/shell.inc>
 #include <lib/core/strings.inc>
+#include <lib/core/System.inc>
 #include <lib/Parallels/CommandWorker.inc>
 #include <lib/Parallels/DoorsBatchWorker.inc>
 

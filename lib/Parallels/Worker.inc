@@ -81,12 +81,13 @@ void call_doWork(Worker this, void doWorkFunction(Worker)) { doWorkFunction(this
 
 // this function will call our stored callback with the 'this' worker as an argument  
 // modify doWork for this new reflection
-void doWork (Worker this) {
+Worker doWork (Worker this) {
     if (!getStarted this) {
        setStarted (this, true); 
        int ad = ((DxlObjectOf this)->"doWork") int;
        call_doWork(this, addr_ ad); 
     }
+    return this;
 }
 // +--- constructor---+ 
 Worker createWorker () { 
@@ -103,4 +104,8 @@ void deleteWorker (Worker &w) {
     { Skip sk = getArguments w; delete sk }
     delete DxlObjectOf w; 
     w = null; 
+}
+
+void waitFor (Worker this) { 
+    while(getStatus this == WORKER_RUNNING) sleep_ 50;
 }

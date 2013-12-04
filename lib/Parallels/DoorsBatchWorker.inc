@@ -16,80 +16,8 @@
     along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-Buffer gBufTempString = create() // temporary buffer that we reuse for temporary string actions
-
-string getEnvironment (string s) {
-    string sResult = ""; 
-    string sCommandline = getenv "DOORS" s
-    if (!null sCommandline) {
-        sResult = sCommandline;
-    } else {
-        sResult = getenv s;
-    } 
-    return sResult; 
-}
-
-Skip getCurrentIncludePath () {
-    Skip sk = create(); 
-    string sRegexp = "^[ ]*([^;]*)(;|$)";
-    gBufTempString = getEnvironment "ADDINS"            ; searchStrings(gBufTempString, sRegexp, sk, false, true, 1); 
-    gBufTempString = getEnvironment "PROJECTADDINS"     ; searchStrings(gBufTempString, sRegexp, sk, false, true, 1); 
-    return sk;
-}
-
-string getIncludePathString () {
-    Skip sk = getCurrentIncludePath(); 
-    string result = joinStrings(sk, ";");
-    delete sk; 
-    return result;
-}
-
-string replaceSlashes (string s, string replacement) {
-    setempty(gBufTempString); 
-    int iLen = length s; 
-    int i; for (i = 0; i < iLen; i++) {
-        char ch = s[i]; 
-        if (ch == '/' || ch == '\\') gBufTempString += replacement else gBufTempString += ch; 
-    }
-    return stringOf gBufTempString;
-}
-
-string getDoorsExecutable () { return (getenv "DOORSHOME") "\\bin\\doors.exe"; }
-
 string Doors_Batch_Worker_getWorkerResult(Worker this) {
     return Command_Worker_getWorkerResult(this);
-}
-Regexp reTraceline = regexp2 "^<([^\n]+):([0-9])+>[ \t]*$"
-
-string getCurrentFile () {
-    gBufTempString = dxlHere();
-    
-    // Get the last line of the DXL traceback 
-    Skip skTrace = create();  
-    searchStrings(gBufTempString, ".+", skTrace, false, false, 0);
-    string sTraceEntry; for sTraceEntry in skTrace do {}; // go to the last line
-    delete skTrace; 
-    
-    // replace forward slashes by backslashes
-    sTraceEntry = replaceSlashes(sTraceEntry, "\\")
-
-    // split the traceline    
-    string sResult = ""; 
-    if (search(reTraceline, gBufTempString, 0)) {
-        string sFile = gBufTempString[match 1];
-        if (sFile == "Line") error "You are not running the current DXL code from a file!";
-        if (fileExists_ sFile) {
-            sResult = sFile;
-        } else {
-            // search include path for relative includes 
-            Skip skIncludes = getCurrentIncludePath(); 
-            string sInclude; for sInclude in skIncludes do {
-                sFile =  replaceSlashes (sInclude "\\" sFile, "\\")
-                if (fileExists_ sFile) { sResult = sFile; break }
-            }
-        }
-    }
-    return sResult; 
 }
 
 string makeTemporaryDirectory (Worker this) { 
@@ -102,8 +30,8 @@ string makeTemporaryDirectory (Worker this) {
 }
 
 string getTempDirectory   (Worker this) { string s; getWorkerProperty(this, "tempdir", s); return s; }
-string getWrapperFilename (Worker this) { (getTempDirectory this) "\\wrapper.dxl"; }
-string getErrorFilename   (Worker this) { (getTempDirectory this) "\\errors.txt"; }
+string getWrapperFilename (Worker this) { return (getTempDirectory this) "\\wrapper.dxl"; }
+string getErrorFilename   (Worker this) { return (getTempDirectory this) "\\errors.txt"; }
 
 string getParallelsParameter(string sName) {
     noError(); 
@@ -137,6 +65,8 @@ void Doors_Batch_Worker_doWork (Worker this) {
 Worker createDoorsBatchWorker (string sFile, string sUser, string sPassword) {
     string sData   = getEnvironment("DATA");
     string sAddins = getIncludePathString (); 
+    
+    if (!fileExists_ sFile) error "The file " sFile " does not exist!";
     
     Worker this = createCommandWorker("");
     makeTemporaryDirectory(this); 

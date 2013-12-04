@@ -19,8 +19,9 @@
 #include <lib/Parallels/Worker.inc>
 #include <lib/Parallels/Pool.inc>
 
-#include <lib/core/shell.inc>
-#include <lib/core/strings.inc>
+#include <lib/core/Shell.inc>
+#include <lib/core/Strings.inc>
+#include <lib/core/System.inc>
 #include <lib/Parallels/CommandWorker.inc>
 #include <lib/Parallels/DoorsBatchWorker.inc>
 
