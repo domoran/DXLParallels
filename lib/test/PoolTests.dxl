@@ -18,7 +18,7 @@
 
 #include <lib/Parallels/Worker.inc>
 #include <lib/Parallels/Pool.inc>
-#include <examples/HelloWorker.inc>
+#include <examples/Tutorial/HelloWorkerExample/HelloWorker.inc>
 
 Pool p = createPool 3 // three parallel workers 
 

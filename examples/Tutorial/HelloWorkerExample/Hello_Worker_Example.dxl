@@ -17,7 +17,7 @@
 */
 
 #include <lib/Parallels/Worker.inc>
-#include <examples/HelloWorker.inc>
+#include <examples/Tutorial/HelloWorkerExample/HelloWorker.inc>
 
 Worker hello = createHelloWorker ("World"); 
 doWork(hello); 
