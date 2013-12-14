@@ -19,11 +19,10 @@ bool valueExists (Skip sk, string sValue) { string s; for s in sk do { if (s == 
 
 void searchStrings(Buffer bufSource, string sPattern,  Skip skResult, bool keepEmpty, bool noDuplicates, int iGroup) {
     if (null sPattern) error "null pattern was passed to searchStrings!"
-
+    // print "Searching for " sPattern " in " bufSource "\n";
     int iPos = 0, iPosOld = -1, iCount = 0; 
     Regexp rePattern = regexp2 sPattern;
     string sMatch = null; for sMatch in skResult do iCount++; // count items in Skip ... 
-     
     
     int iLen = length bufSource;
     while (search(rePattern, bufSource, iPos) && iPos < iLen) {
@@ -34,6 +33,7 @@ void searchStrings(Buffer bufSource, string sPattern,  Skip skResult, bool keepE
              (!noDuplicates || !valueExists(skResult, sMatch)) 
            ) {
                 put(skResult, iCount++, sMatch);
+                // print "Putting with key " (iCount - 1) ":" sMatch "\n";
         }
         iPos += iEndMatch + 1;
     }
@@ -41,6 +41,26 @@ void searchStrings(Buffer bufSource, string sPattern,  Skip skResult, bool keepE
     delete rePattern;
     return skResult; 
 }
+
+void combineEscaped (Buffer bufTarget, Buffer bufSource, Regexp reEscape, string sEscapeSequence) {
+    int iPos = 0; 
+    int iLen = length bufSource;
+    while (search(reEscape, bufSource, iPos) && iPos < iLen) {
+        int iStartMatch = start 0; 
+        int iEndMatch   = end 0; 
+        if (iEndMatch < 0) error "Null match error in searchStrings at iPos = " iPos " iStartMatch " iStartMatch " End Match: " iEndMatch "\n";
+        
+        // we found an escape sequence, so first add the string before the match
+        if (iStartMatch > 0) combine(bufTarget, bufSource, iPos, iPos + iStartMatch - 1);
+        
+        // add the escaped sequence
+        bufTarget += sEscapeSequence; 
+        // print "Adding: " bufSource " IPos = " iPos " Start = " iStartMatch " End = " iEndMatch "\n"; 
+        combine(bufTarget, bufSource, iPos + iStartMatch, iPos + iEndMatch); 
+        iPos += iEndMatch + 1;
+    }
+    if (iPos < iLen) combine(bufTarget, bufSource, iPos, iLen-1);
+}  
 
 string joinStrings(Skip sk, string sSep) {
     Buffer buf = create();

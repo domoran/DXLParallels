@@ -29,22 +29,26 @@ string    getDBFile (SQLite this)      { return ((DxlObjectOf this)->"DBFile") s
 void   setDBFile (SQLite this, string   value) { (DxlObjectOf this)->"DBFile" = value; }
 
 // +--- property: string CurrentFileName ---+
-string    getCurrentFileName (SQLite this)      { return ((DxlObjectOf this)->"CurrentFileName") string   }
-void   setCurrentFileName (SQLite this, string   value) { (DxlObjectOf this)->"CurrentFileName" = value; }
+string    getSQLCommandsFileName (SQLite this)      { return ((DxlObjectOf this)->"SQLCommandsFileName") string   }
+void   setSQLCommandsFileName (SQLite this, string   value) { (DxlObjectOf this)->"SQLCommandsFileName" = value; }
+
+// +--- property: StreamEx CurrentFile ---+
+StreamEx    getSQLCommandsFile (SQLite this)      { return ((DxlObjectOf this)->"SQLCommandsFile") StreamEx }
+void   setSQLCommandsFile (SQLite this, StreamEx   value) { (DxlObjectOf this)->"SQLCommandsFile" = value; }
 
 // +--- property: string OutputFileName ---+
 string    getOutputFileName (SQLite this)      { return ((DxlObjectOf this)->"OutputFileName") string   }
 void   setOutputFileName (SQLite this, string   value) { (DxlObjectOf this)->"OutputFileName" = value; }
 
-// +--- property: StreamEx CurrentFile ---+
-StreamEx    getCurrentFile (SQLite this)      { return ((DxlObjectOf this)->"CurrentFile") StreamEx }
-void   setCurrentFile (SQLite this, StreamEx   value) { (DxlObjectOf this)->"CurrentFile" = value; }
-
-StreamEx createTempSQLFile (SQLite this) {
+StreamEx createNewSQLCommandsFile (SQLite this) {
     string sqlFileName = tempFileName() ".sql" 
     StreamEx stEx = createStreamEx(write(sqlFileName, CP_UTF8));
-    setCurrentFileName (this, sqlFileName); 
-    setCurrentFile(this, stEx); 
+    setSQLCommandsFileName (this, sqlFileName); 
+    setSQLCommandsFile(this, stEx);
+    
+    string sOutput = tempFileName() ".txt";
+    setOutputFileName(this, sOutput);
+    stEx += ".output stdout\npragma journal_mode = off;\npragma synchronous=off;\n";
     return stEx;  
 }
 
@@ -53,29 +57,26 @@ SQLite createSQLite (string sDBFile, bool bOverwrite) {
     DxlObject dx = new(); 
     SQLite this = addr_ dx; 
     setDBFile(this, sDBFile);
-
-    StreamEx stEx = createTempSQLFile(this); // will set currentFile ...    
-    string sOutput = tempFileName() ".txt";
-    setOutputFileName(this, sOutput);
-    serializeString(stEx, ".output stdout\n");
     
+    createNewSQLCommandsFile(this); // will set the command SQL File ...
+        
     return this; 
 }
 
 SQLite createSQLite (string sDBFile) { return createSQLite(sDBFile, false); }
 
 string getCommandForExecution_ (SQLite this) {
-    if (!null getCurrentFile(this)) { 
-        closeStreamEx (getCurrentFile this);
-        setCurrentFile(this, null StreamEx);
+    if (!null getSQLCommandsFile(this)) { 
+        closeStreamEx (getSQLCommandsFile this);
+        setSQLCommandsFile(this, null StreamEx);
     } 
     
-    return "cmd /C " '"' gsSqlLiteExecutable '"' " " (getDBFile this) " <" (getCurrentFileName this) " >" (getOutputFileName this);
+    return "cmd /C " '"' gsSqlLiteExecutable '"' " " (getDBFile this) " <" (getSQLCommandsFileName this) " >" (getOutputFileName this);
 }
 
 void cleanup(SQLite this) {
     if (!null getOutputFileName(this)) deleteFile getOutputFileName(this);
-    if (!null getCurrentFile(this)) deleteFile getCurrentFileName(this);
+    if (!null getSQLCommandsFile(this)) deleteFile getSQLCommandsFileName(this);
 }
 
 void deleteSQLite (SQLite &this) {

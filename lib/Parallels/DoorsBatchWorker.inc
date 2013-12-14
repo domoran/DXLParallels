@@ -16,6 +16,23 @@
     along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+          REQUIRES THE FOLLOWING INCLUDES: 
+          --------------------------------
+          
+#include <lib/core/Strings.inc>
+#include <lib/core/System.inc>
+#include <lib/core/Shell.inc>
+#include <lib/Parallels/Worker.inc>
+#include <lib/Parallels/CommandWorker.inc>
+#include <lib/Parallels/DoorsBatchWorker.inc>
+          
+          ---------------------------------
+*/
+// this is needed - in batch mode execution will simply be stopped without 
+// raising an error... 
+pragma runLim, 0
+
 string Doors_Batch_Worker_getWorkerResult(Worker this) {
     return Command_Worker_getWorkerResult(this);
 }
@@ -32,6 +49,7 @@ string makeTemporaryDirectory (Worker this) {
 string getTempDirectory   (Worker this) { string s; getWorkerProperty(this, "tempdir", s); return s; }
 string getWrapperFilename (Worker this) { return (getTempDirectory this) "\\wrapper.dxl"; }
 string getErrorFilename   (Worker this) { return (getTempDirectory this) "\\errors.txt"; }
+string getCmdFilename     (Worker this) { return (getTempDirectory this) "\\cmd.bat"; }
 
 string getParallelsParameter(string sName) {
     noError(); 
@@ -73,7 +91,7 @@ Worker createDoorsBatchWorker (string sFile, string sUser, string sPassword) {
     
     setWorkerProperty(this, "batchfile", sFile string);
      
-    sCommand = getDoorsExecutable() " " // -
+    sCommand = '"' getDoorsExecutable() "\" " // -
               (!null sData     ? ("-d " sData " " ) : "") // -
               (!null sAddins   ? ("-a \"" sAddins "\" ") : "") // -
               "-b \"" (getWrapperFilename this) "\" " // -
@@ -81,7 +99,44 @@ Worker createDoorsBatchWorker (string sFile, string sUser, string sPassword) {
               (!null sPassword ? ("-P " sPassword) " " : "") // -
               "-W -l \"" (getErrorFilename this) "\""
               
+    // write command file 
+    Stream st = write getCmdFilename(this);
+    st << sCommand
+    close st;               
+              
     setWorkerArgument(this, "command", sCommand);
     set_doWork (this, Doors_Batch_Worker_doWork);
     return this;
+}
+
+void deleteRecursive (string sDirectory) {
+    string sName = null;
+    Stat st = create sDirectory; 
+    if (null st) return; 
+    
+    bool bDirectory = directory st; 
+    bool bRegular   = regular st; 
+    delete st; 
+    
+    if (bDirectory) {
+        for sName in directory sDirectory do {
+            if (sName == "." || sName == "..") continue; 
+            deleteRecursive (sDirectory "/" sName); 
+        }
+        // print "Deleting Directory " sDirectory "\n"
+        system("CMD /C rmdir \"" sDirectory "\"");
+    }
+    
+    if (bRegular) {
+        // print "Deleting file: " sDirectory "\n"
+        deleteFile sDirectory
+    }
+}
+
+void cleanupDoorsBatchWorker(Worker this) {
+    string sTemp = null;
+    getWorkerProperty(this, "tempdir", sTemp);
+    if (fileExists_ sTemp) {
+        deleteRecursive sTemp;
+    } 
 }

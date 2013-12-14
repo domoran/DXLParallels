@@ -28,11 +28,12 @@
 #include <lib/core/SQLite.inc>
 
 SQLite sq = createSQLite("C:\\temp\\mydb.sql", true);
-serializeString(getCurrentFile(sq), ".output stdout\n");
-serializeString(getCurrentFile(sq), "create table modules(id integer, text text);\n");
-serializeString(getCurrentFile(sq), "insert into modules values(1, 'Hällo');\n");
-serializeString(getCurrentFile(sq), "insert into modules values(2, 'Welt');\n");
-serializeString(getCurrentFile(sq), "select * from modules;\n");
+
+getSQLCommandsFile sq += ".output stdout\n";
+getSQLCommandsFile sq += "create table modules(id integer, text text);\n";
+getSQLCommandsFile sq += "insert into modules values(1, 'Hällo');\n";
+getSQLCommandsFile sq += "insert into modules values(2, 'Welt');\n";
+getSQLCommandsFile sq += "select * from modules;\n";
 
 string sCommand = getCommandForExecution_(sq);
 Worker wrkCommand = createCommandWorker (sCommand);

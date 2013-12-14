@@ -29,78 +29,228 @@
 #include <lib/core/StreamEx.inc>
 #include <lib/core/SQLite.inc>
 
-// the data structures we use for dumping the SQL contents 
-string sDBFile = "C:\\temp\\mydb.sql";
-deleteFile sDBFile; 
-SQLite db        = createSQLite(sDBFile, true);
-Buffer bufTemp    = create(50000); 
+#include <lib/core/binary.inc>
+#include <lib/extended/SqliteExport.inc>
 
-void setupStructureTriggers (SQLite db) {
-    StreamEx strmDump = getCurrentFile(db);
-    serializeString (strmDump, "drop trigger if exists item_tree; create trigger item_tree after insert on items BEGIN 
-                                     insert into structure values (new.item_id, new.object_id, new.parent_id, new.id, 1); 
-                                     insert into structure select c.parent, new.id, c.depth+1 
-                                            from structure c where c.child = new.parent;
-                                END;");
+string sUser     = "Administrator"
+string sPassword = "";
+string sDatabaseFile = "C:\\temp\\mydb.sql"; 
+
+SQLite dbData = null;
+bool bRun = false;
+Date startTime = null, endTime = null; 
+
+Buffer bufLog = create(); 
+
+DBE sbStatus = null; 
+DBE btRun = null, btClose = null;
+DBE fldExportJobs = null, fldFinishedExportJobs = null, fldLog = null;
+DBE fldImportJobs = null, fldFinishedImportJobs = null;
+
+Pool poolExport = null, poolImport = null;
+
+Folder fStart = folder "/"; 
+Skip skItemsToBeProcessed = create(); 
+int currentItem = 0;
+
+void pushItem (Item I) {
+    // print "Pushing item " (rootName_ I) "\n"
+    put(skItemsToBeProcessed, currentItem++, I, true); 
 }
 
-void setupDoorsDatabase (SQLite db) {
-    StreamEx strmDump = getCurrentFile(db);
-
-    serializeString(strmDump, "
-                               create table item_structure (doors_id integer, parent integer, depth integer);
-                               create table items  (doors_id integer PRIMARY KEY, parent integer, type TEXT, name TEXT);
-                               
-                               create table object_structure (id integer, parent integer, depth integer);
-                               create table objects (absNo integer, parent_object integer, parent_module integer, deleted integer);
-                               ");
-                               
-    serializeString(strmDump, "
-                               create trigger item_tree after insert on items BEGIN
-                                  insert into item_structure values (new.doors_id, new.parent, 1); 
-                                  insert into item_structure select new.doors_id, c.parent, c.depth + 1 from item_structure c where c.doors_id = new.parent;
-                               END;
-                               "); 
-                                   
-                               
-    /*                            
-    serializeString(strmDump, "create table objects(item_id integer, absNo integer, deleted NUMERIC,
-                                      FOREIGN KEY(item_id) references items(id));\n");
-                               
-                                      
-    serializeString(strmDump, "create table attribute_values(item_id NUMERIC, object_id NUMERIC, attribute_name TEXT, attribute_value TEXT);\n");
-    */
-    // create root node 
-    // serializeString(strmDump, "insert into items values (0, NULL, 'DB', 'DB');\n"); 
-} 
-
-void createTestData (SQLite db) {
-    StreamEx strmDump = getCurrentFile(db);
-    serializeString(strmDump, "insert into items values (1, 0, 'Folder', 'Test');\n"); 
-    serializeString(strmDump, "insert into items values (2, 0, 'Folder', 'Folders');\n"); 
-    serializeString(strmDump, "insert into items values (3, 1, 'Folder', 'Level 1a');\n"); 
-    serializeString(strmDump, "insert into items values (4, 1, 'Folder', 'Level 1b');\n"); 
-    serializeString(strmDump, "insert into items values (5, 3, 'Formal', 'Mod A');\n"); 
-    serializeString(strmDump, "insert into items values (6, 2, 'Formal', 'Mod B');\n");
+Item popItem () {
+    Item I = null Item; 
+    if (currentItem > 0) find(skItemsToBeProcessed, --currentItem, I);
+    // if (!null I) print "Popping item " (rootName_ I) "\n" 
+    return I;
 }
 
-// setupStructureTriggers (db); 
-setupDoorsDatabase (db); 
+void readDatabase () {
+    dbData = createSQLite(sDatabaseFile, false);
+}
 
-createTestData (db); 
+void initializeDatabase() {
+    dbData = createSQLite(sDatabaseFile, true);
+    setupDoorsDatabase (dbData, true); 
+    Worker wrkInit = createCommandWorker (getCommandForExecution_(dbData));
+    enqueue(poolImport, wrkInit);
+}
 
-serializeString(getCurrentFile db, "select * from item_structure where parent = 1 and depth=1;\n"); 
-//serializeString(getCurrentFile db, "select * from item_structure where doors_id = 4;\n"); 
+int lastRunTime = -1;
 
+void runExportTimerCallback(DBE x) {
+    if (!bRun) return; 
+    int runTime =  (intOf today())- (intOf startTime);
+    
+    // Update the time 
+    if (lastRunTime != runTime) {
+        set(sbStatus, 0,  "Elapsed: " runTime " s");
+        lastRunTime = runTime;
+    }
+    
+    Item it = popItem();
+    if (!null it) {
+        // if its a formal module, enqueue the export
+        if (type it == "Formal" && !isDeleted it) {
+            Worker w = createDoorsBatchWorker (getCurrentFile(), sUser, sPassword);
+            string sExportFilename = tempFileName() ".sql";
+            // print "Enqueuing export to file " sExportFilename "\n";
+            setParallelsParameter(w, "itemfullname", fullName it);
+            setParallelsParameter(w, "exportfile", sExportFilename);
+            setWorkerProperty(w, "item", fullName it);
+            enqueue(poolExport, w );
+        }
+        
+        if (type it == "Folder" || type it == "Project") {
+            Item itChild; 
+            for itChild in folder fullName it do {
+                pushItem (itChild); 
+            }
+        }
+    } else {
+        if (isFinished poolExport && isFinished poolImport) {
+            bRun = false; 
+            set(sbStatus, 0, "Finished: " runTime " s");
+            string sReturn; 
+            Worker w; for w in getResults(poolExport) do print (getWorkerResult w) "\n";
+        } 
+    }
+    
+    processQueue poolExport
+    processQueue poolImport
+    
+    set(fldExportJobs, (getQueueLength poolExport) "");
+    set(fldFinishedExportJobs, (getFinishedJobs poolExport) "");
+    set(fldImportJobs, (getQueueLength poolImport) "");
+    set(fldFinishedImportJobs, (getFinishedJobs poolImport) "");
+    set(fldLog, bufLog);
+    
+    // From the finished export jobs make import jobs
+    Worker w; for w in getResults(poolExport) do {
+        string sFilename = getWorkerResult(w);
+        if (sFilename[0:1] == "0\n") {
+            string sSQLFile = sFilename[2:];
+            if (fileExists_ sSQLFile) { 
+                print "Starting import job for " sSQLFile "\n";
+                print "Item: " (getWorkerStringProperty(w, "item")) " TempDir: " (getWorkerStringProperty(w, "tempdir")) "\n"
+                print "\n\n"
+                createNewSQLCommandsFile dbData += ".read " replaceSlashes(sSQLFile, "\\\\");
+                
+                Worker wrkImport = createCommandWorker (getCommandForExecution_(dbData));
+                enqueue(poolImport, wrkImport)
+            } else {
+                print "File not found: " sSQLFile "\n"
+                print "Item: " (getWorkerStringProperty(w, "item")) " TempDir: " (getWorkerStringProperty(w, "tempdir")) "\n"
+                print "\n\n"
+            }
+        } else {
+            print "Unexpected Export Result: " sFilename "\n";
+            print "Item: " (getWorkerStringProperty(w, "item")) " TempDir: " (getWorkerStringProperty(w, "tempdir")) "\n"
+            print "\n\n"
+        }
+    }
+    
+    clearAllResults(poolExport);
+    
+    for w in getResults(poolImport) do {
+        string sCommand = null; 
+        getWorkerArgument(w, "command", sCommand)
+        print "Import Worker Command: " sCommand "\n";
+        print "Import done: " getWorkerResult(w) "\n";
+    };
+    
+    clearAllResults(poolImport);
+}
 
-string sCommand = getCommandForExecution_(db);
-print sCommand "\n"
-Worker wrkCommand = createCommandWorker (sCommand);
-waitFor doWork(wrkCommand);
+void runExportCallback(DBE ) {
+    if (null dbData) {
+        startTime = today();
+        
+        poolExport = createPool 12;
+        poolImport = createPool 1;
+        
+        initializeDatabase();
+        pushItem (item fullName fStart); 
+    }
+     
+    bRun = !bRun; 
+}
 
-if (getWorkerResult wrkCommand != "0") {
-    print "SQLite invocation failed: " (getWorkerResult wrkCommand) "\n"; 
+void closeFunc(DB x) { release x; hide x }
+void closeFuncDBE(DBE x) { closeFunc getParent x }
+
+void showDialog () {
+    DB diag = topMost "SQLite Exporter"; 
+    int sizes[] = {300} 
+    
+    timer(diag, 0.1, runExportTimerCallback, "ExportTimer");
+    sbStatus = statusBar(diag, "", sizes);
+    close (diag, false, closeFunc);
+    
+    fldExportJobs = field(diag, "Export Jobs", "", 7, true);
+    fldExportJobs->"top"->"form";
+    fldExportJobs -> "left" -> "form"
+    
+    fldFinishedExportJobs   = field(diag, "   Finished: ", "", 7, true);
+    fldFinishedExportJobs -> "top" -> "spaced" -> fldExportJobs;
+    fldFinishedExportJobs -> "left" -> "form"
+    
+    fldImportJobs = field(diag, "Import Jobs", "", 7, true);
+    fldImportJobs->"top"->"form";
+    fldImportJobs -> "left" -> "spaced" -> fldExportJobs
+    
+    fldFinishedImportJobs   = field(diag, "   Finished: ", "", 7, true);
+    fldFinishedImportJobs -> "top" -> "spaced" -> fldImportJobs;
+    fldFinishedImportJobs -> "left" -> "spaced" -> fldExportJobs
+
+    fldLog   = text(diag, "Log: ", "", 80, 80, true);
+    fldLog -> "top" -> "spaced" -> fldFinishedExportJobs;
+    fldLog -> "left" -> "form"
+    
+    btRun = button (diag, "Run Export", runExportCallback);
+    btRun -> "left" -> "form"
+    btRun -> "top" -> "spaced"->fldLog;
+    
+    btClose = button (diag, "Close", closeFuncDBE);
+    btClose -> "left" -> "spaced"->btRun
+    btClose -> "top" -> "spaced"->fldLog;
+    
+    realize diag
+    setSize(diag, 300, 400);  
+    block diag;
+    destroy diag;
+    halt;
+}
+
+// #include <D:/mma/Projekte/DXLParallels/examples/SqlExport/SqlLiteExport.dxl>
+
+if (isBatch()) {
+    string sItemName = getParallelsParameter "itemfullname";
+    Item it = item sItemName;  
+
+    if (!null it && !isDeleted it) {
+        string sExportFilename = getParallelsParameter "exportfile";
+        Stream strmExport = write (sExportFilename, CP_UTF8);
+        StreamEx expFile = createStreamEx(strmExport)
+        exportModule(expFile, it);
+        closeStreamEx(expFile);
+        cout << sExportFilename;
+    } else {
+        cout << "No such item: " sItemName "\n"
+    }
 } else {
-    // Buffer leaks intended ;-) 
-    print "##-\n" getResult(db) "-##\n";
+    if (true) {
+        showDialog ();
+    } else {
+        int i; for (i = 0; i < 10; i++) {
+            Item I = item "/BMW ReqIF Import/SPECIFICATION";
+            string s = "C:\\temp\\test.sql";
+            Worker w = createDoorsBatchWorker (getCurrentFile(), sUser, sPassword);
+            setParallelsParameter(w, "itemfullname", fullName I);
+            setParallelsParameter(w, "exportfile", s);
+            doWork w;
+            waitFor(w);
+            print "RESULT:" (getWorkerResult w) "\n";
+        }
+    }
 }

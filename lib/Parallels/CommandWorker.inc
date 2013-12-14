@@ -16,6 +16,17 @@
     along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+          REQUIRES THE FOLLOWING INCLUDES: 
+          --------------------------------
+          
+#include <lib/core/Shell.inc>
+#include <lib/Parallels/Worker.inc>
+#include <lib/Parallels/CommandWorker.inc>
+          
+          ---------------------------------
+*/
+
 void Command_Worker_doWork (Worker this) {
     string sCommand = ""; 
     getWorkerArgument(this, "command", sCommand);

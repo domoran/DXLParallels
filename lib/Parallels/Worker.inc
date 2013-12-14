@@ -16,6 +16,15 @@
     along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+          REQUIRES THE FOLLOWING INCLUDES: 
+          --------------------------------
+          
+#include <lib/Parallels/Worker.inc>
+          
+          ---------------------------------
+*/
+
 struct Worker {};
 
 DxlObject DxlObjectOf (Worker w)     { return ((addr_ w ) DxlObject); }
@@ -108,4 +117,10 @@ void deleteWorker (Worker &w) {
 
 void waitFor (Worker this) { 
     while(getStatus this == WORKER_RUNNING) sleep_ 50;
+}
+
+string getWorkerStringProperty (Worker this, string sName) {
+    string sResult = null; 
+    getWorkerProperty(this, sName, sResult);
+    return sResult;
 }

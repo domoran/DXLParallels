@@ -16,6 +16,13 @@
     along with the Parallels Library.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+          REQUIRES THE FOLLOWING INCLUDES: 
+          --------------------------------
+            #include <lib/core/Strings.inc>
+            #include <lib/core/System.inc>
+*/
+
 Buffer gBufTempStringSystem = create() // temporary buffer that we reuse for temporary string actions
 
 string replaceSlashes (string s, string replacement) {
@@ -35,7 +42,8 @@ string getEnvironment (string s) {
         sResult = sCommandline;
     } else {
         sResult = getenv s;
-    } 
+    }
+    // print "Environment " s ":" sResult "\n"
     return sResult; 
 }
 
@@ -84,8 +92,8 @@ string searchInIncludePath (string sName) {
     string sResult  = ""; 
     
     string sInclude; for sInclude in skIncludes do {
-        sName =  replaceSlashes (sInclude "\\" sName, "\\")
-        if (fileExists_ sName) { sResult = sName; break }
+        string sFileName =  replaceSlashes (sInclude "\\" sName, "\\")
+        if (fileExists_ sFileName) { sResult = sFileName; break }
     };
     
     delete skIncludes;
@@ -98,6 +106,8 @@ string getCurrentFile () {
     string sFile = null; 
     int iLineNr  = null; 
     if (splitTraceEntry(sTraceEntry, sFile, iLineNr)) {
+        // print "Entry: " (upper sFile) " :: " iLineNr "\n"
+        
     	// we want an absolute path, however DOORS will always search also relative to 
     	// the current directory. 
 	    if (fileExists_ sFile && !fileExists_ (currentDirectory() "/" sFile) ) return sFile; 

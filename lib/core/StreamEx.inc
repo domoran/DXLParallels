@@ -268,6 +268,7 @@ void BufferStream_appendBuffer (StreamEx this, Buffer val) {
     combine(st, val, 0); 
 }
 
+
 void closeStreamEx(StreamEx this) {
     StreamType sType = getStreamType(this);
     if (sType == File_Stream) { Stream st = null; getStream(this, st); if (!null st) close(st); } 
@@ -291,4 +292,16 @@ StreamEx createStreamEx (Buffer strm) {
     return this; 
 }
 
+// Syntax sugar 
+void ::+= (StreamEx this, string val) {
+    serializeString(this, val);
+}
 
+void ::+= (StreamEx this, Buffer buf) {
+    serializeBuffer(this, buf);
+}
+
+void ::<- (StreamEx this, Buffer buf) {
+    serializeBuffer(this, buf);
+    setempty(buf);  
+}

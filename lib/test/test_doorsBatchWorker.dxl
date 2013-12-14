@@ -40,4 +40,8 @@ Pool p = createPool 1 // one worker
 enqueue(p, createDoorsBatchWorker (sTemp, sUser, sPassword) );
 wait(p);
 
-print "Result: '" getQueueResult(p, 0) "'"; 
+print "Result: '" getQueueResult(p, 0) "'";
+
+cleanupDoorsBatchWorker getWorker(p,0);
+
+

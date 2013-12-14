@@ -43,4 +43,22 @@ if (test_searchStrings("abc;def;;", sPattern, false, true, 1) != "abc#def") erro
 if (test_searchStrings(";abc;def;", sPattern, false, true, 1) != "abc#def") error "Keep Empty test 5 failed!"
 if (test_searchStrings("abc;;def", sPattern, false, true, 1) != "abc#def") error "Keep Empty test 6 failed!"
 
+Buffer bufTgt = create(), bufSrc = create();
+string test_escaped(string sSrc, string sPattern, string sEscape) {
+    bufSrc = sSrc; 
+    setempty(bufTgt);
+    Regexp re = regexp2 sPattern;
+    combineEscaped(bufTgt, bufSrc, re, sEscape);
+    string sResult = stringOf bufTgt; 
+    delete re;
+    return sResult; 
+}
+if (test_escaped("", "0", "!") != "")       error "Combine Escaped test 1 failed!";  
+if (test_escaped("0", "0", "!") != "!0")    error "Combine Escaped test 2 failed!";  
+if (test_escaped("1", "0", "!") != "1")     error "Combine Escaped test 3 failed!";  
+if (test_escaped(" 01234", "0", "!") != " !01234") error "Combine Escaped test 4 failed!";  
+if (test_escaped(" 01234", "0|1", "!") != " !0!1234") error "Combine Escaped test 5 failed!";  
+if (test_escaped(" 01234", " |0|1", "!") != "! !0!1234") error "Combine Escaped test 6 failed!";  
+if (test_escaped("Hallo 'Welt'!", "'", "\\") != "Hallo \\'Welt\\'!") error "Combine Escaped test 7 failed!";  
+
 print "OK"
